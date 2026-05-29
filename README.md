@@ -121,10 +121,107 @@ Each scan also pulls **live throughput** per `(node × inbound)` from `/api/syst
 | `NODE_NOT_IN_DNS` | info | An enabled node serves a domain-backed inbound but no host domain resolves to its IP. Often legitimate for bridge/relay backends — verify it isn't a node missing from a balancer domain. |
 | `DUP_DOMAIN` | info | The same domain is used across more than one **different** inbound. Verify it's intentional (same-inbound reuse is not flagged). |
 
+## GitHub Pages (no server needed)
+
+A hosted version is available at **[legiz-ru.github.io/remna-mapping](https://legiz-ru.github.io/remna-mapping)** — runs entirely in the browser, no Docker or Node.js required.
+
+**Difference from the self-hosted version:**
+
+| | Self-hosted (Docker) | GitHub Pages |
+|---|---|---|
+| Panel API calls | Server → panel (no CORS needed) | Browser → panel (**CORS required**) |
+| DNS resolution | System resolver + DoH fallback | DoH only (`dns.google`) |
+| Token exposure | Never leaves the server | Sent from your browser directly to your panel |
+
+### CORS setup
+
+The GitHub Pages edition makes requests **from `https://legiz-ru.github.io`** directly to your panel. Your reverse proxy must respond with the appropriate CORS headers, otherwise the browser will block the request.
+
+#### Nginx
+
+Add inside your panel's `server {}` block (or the `location /` that proxies to Remnawave):
+
+```nginx
+# CORS for REMNAWAVE Topology Mapper on GitHub Pages
+add_header 'Access-Control-Allow-Origin' 'https://legiz-ru.github.io' always;
+add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS' always;
+add_header 'Access-Control-Allow-Headers' 'Authorization, Content-Type' always;
+
+if ($request_method = OPTIONS) {
+    add_header 'Access-Control-Allow-Origin' 'https://legiz-ru.github.io' always;
+    add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS' always;
+    add_header 'Access-Control-Allow-Headers' 'Authorization, Content-Type' always;
+    add_header 'Access-Control-Max-Age' 86400;
+    return 204;
+}
+```
+
+Minimal example — full `server {}` block:
+
+```nginx
+server {
+    listen 443 ssl;
+    server_name panel.example.com;
+    # ... ssl_certificate, ssl_certificate_key ...
+
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+
+        add_header 'Access-Control-Allow-Origin' 'https://legiz-ru.github.io' always;
+        add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS' always;
+        add_header 'Access-Control-Allow-Headers' 'Authorization, Content-Type' always;
+
+        if ($request_method = OPTIONS) {
+            add_header 'Access-Control-Allow-Origin' 'https://legiz-ru.github.io' always;
+            add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS' always;
+            add_header 'Access-Control-Allow-Headers' 'Authorization, Content-Type' always;
+            add_header 'Access-Control-Max-Age' 86400;
+            return 204;
+        }
+    }
+}
+```
+
+After editing run `nginx -t && systemctl reload nginx`.
+
+#### Caddy
+
+Add a `(cors_remna)` snippet and import it in your site block:
+
+```caddy
+(cors_remna) {
+    @preflight method OPTIONS
+    handle @preflight {
+        header Access-Control-Allow-Origin  "https://legiz-ru.github.io"
+        header Access-Control-Allow-Methods "GET, POST, OPTIONS"
+        header Access-Control-Allow-Headers "Authorization, Content-Type"
+        header Access-Control-Max-Age       "86400"
+        respond 204
+    }
+    header Access-Control-Allow-Origin  "https://legiz-ru.github.io"
+    header Access-Control-Allow-Methods "GET, POST, OPTIONS"
+    header Access-Control-Allow-Headers "Authorization, Content-Type"
+}
+
+panel.example.com {
+    import cors_remna
+    reverse_proxy localhost:3000
+}
+```
+
+Run `caddy reload` or `systemctl reload caddy` after saving.
+
+> **Security note:** The CORS header only tells the browser which origins are allowed — it does not open your panel to unauthenticated access. Every request still requires a valid Bearer token, exactly as before.
+
+---
+
 ## Security
 
-- The token is sent only to **your** panel (server-side, to avoid browser CORS) and is **never stored on disk** or sent to any third party.
-- DNS resolution uses the host's system resolver first (A and AAAA). If a name fails, it falls back to DNS-over-HTTPS (`dns.google`, A + AAAA) — only the **hostname** is sent, never the token. Disable with `DOH=0`.
+- **Self-hosted version:** The token is sent only to **your** panel (server-side, to avoid browser CORS) and is **never stored on disk** or sent to any third party.
+- **GitHub Pages version:** The token is sent directly from your browser to your panel (no intermediate server). It is never sent to `legiz-ru.github.io` or any other host.
+- DNS resolution uses the host's system resolver first (A and AAAA). If a name fails, it falls back to DNS-over-HTTPS (`dns.google`, A + AAAA) — only the **hostname** is sent, never the token. Disable with `DOH=0` (self-hosted only).
 - "Remember" in the UI stores the URL + token in your browser's `localStorage` only. Untick it on shared machines.
 
 ## Env vars
