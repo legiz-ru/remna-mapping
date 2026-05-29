@@ -95,6 +95,10 @@
   .tooltip{position:absolute;pointer-events:none;background:rgba(10,14,24,.96);border:1px solid var(--cardb);
            border-radius:9px;padding:8px 11px;font-size:12px;max-width:300px;opacity:0;transition:opacity .12s;z-index:30;box-shadow:0 8px 30px rgba(0,0,0,.5)}
   .tooltip b{color:#fff} .tooltip .s{color:var(--mut);font-size:11px}
+  .cp{cursor:pointer;opacity:.5;margin-left:6px;font-size:11px;user-select:none}
+  .cp:hover{opacity:1;color:var(--dom)}
+  .toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:rgba(16,22,36,.96);border:1px solid var(--cardb);color:var(--txt);padding:8px 14px;border-radius:10px;font-size:12.5px;opacity:0;pointer-events:none;transition:opacity .2s;z-index:70;box-shadow:0 8px 30px rgba(0,0,0,.5);max-width:80vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .toast.show{opacity:1}
   .modal-bg{position:fixed;inset:0;background:rgba(5,8,16,.66);display:none;align-items:center;justify-content:center;z-index:50}
   .modal-bg.show{display:flex}
   .modal{background:#0c1322;border:1px solid var(--cardb);border-radius:16px;max-width:560px;width:90%;max-height:84vh;overflow:auto;padding:16px 20px;box-shadow:0 20px 60px rgba(0,0,0,.6);position:relative}
@@ -226,6 +230,7 @@
   <div class="side-backdrop" id="sideBackdrop"></div>
   <button id="sideToggle" type="button" class="btn" title="Show issues & details panel">Panel <span id="sideToggleCount"></span></button>
   <div class="tooltip" id="tooltip"></div>
+  <div class="toast" id="toast"></div>
   <div class="modal-bg" id="modalBg"><div class="modal"><span class="x" id="modalX">close</span><div id="modalBody"></div></div></div>
 
 <script>
@@ -261,7 +266,7 @@ els.fInbound.onchange=()=>{filters.inbound=els.fInbound.value;renderView();};
 els.fIssues.onchange=()=>{filters.issuesOnly=els.fIssues.checked;renderView();};
 els.fOverlay.onchange=()=>{filters.overlay=els.fOverlay.checked;if(DATA){MODEL=buildModel();renderIssues();renderView();}};
 els.exportBtn.onclick=()=>exportData();
-els.search.oninput=()=>{filters.search=els.search.value.trim().toLowerCase();renderView();};
+let searchT;els.search.oninput=()=>{filters.search=els.search.value.trim().toLowerCase();clearTimeout(searchT);searchT=setTimeout(renderView,250);};
 els.fitBtn.onclick=()=>renderView();
 els.expandBtn.onclick=()=>{treeExpandAll=true;renderView();};
 els.collapseBtn.onclick=()=>{treeExpandAll=false;renderView();};
@@ -642,17 +647,21 @@ function showTipHtml(e,h){els.tooltip.innerHTML=h;els.tooltip.style.opacity=1;mo
 function moveTip(e){els.tooltip.style.left=Math.min(e.clientX+12,innerWidth-310)+'px';els.tooltip.style.top=(e.clientY+12)+'px';}
 function hideTip(){els.tooltip.style.opacity=0;}
 function kv(k,v){return `<div class="kv"><span>${k}</span><span>${v}</span></div>`;}
+const cp=v=>v?`<span class="cp" data-copy="${esc(v)}" title="Copy">⧉</span>`:'';
+function showToast(m){const t=document.getElementById('toast');if(!t)return;t.textContent=m;t.classList.add('show');clearTimeout(t._h);t._h=setTimeout(()=>t.classList.remove('show'),1400);}
+function copyText(v){const ok=()=>showToast('Copied: '+v);const fb=()=>{try{const ta=document.createElement('textarea');ta.value=v;ta.style.cssText='position:fixed;opacity:0';document.body.appendChild(ta);ta.select();document.execCommand('copy');ta.remove();ok();}catch(e){showToast('Copy failed');}};if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(v).then(ok).catch(fb);else fb();}
+document.addEventListener('click',e=>{const el=e.target.closest&&e.target.closest('.cp');if(el&&el.dataset.copy!=null){e.stopPropagation();copyText(el.dataset.copy);}});
 function showNodeDetail(n){
   const st=n.disabled?'dis':n.connected?'up':'down';
   const inbs=(n.serves||[]).map(u=>(MODEL.inboundByUuid.get(u)||{}).tag||String(u).slice(0,8));
   const doms=MODEL.domains.filter(d=>d.matched.has(n.uuid));
   const domHtml=doms.length?doms.map(d=>'<div class="chain-row"><b>'+esc(d.domain)+'</b> <span class="s">'+esc([...d.inboundTags].join(', '))+'</span><div class="s">via hosts: '+esc(d.hosts.join(', '))+'</div></div>').join(''):'<div class="s">No host domain currently routes to this node.</div>';
-  els.modalBody.innerHTML='<div class="det-title">'+(flag(n.country)?flag(n.country)+' ':'')+esc(n.name)+' <span class="badge '+st+'">'+(st==='up'?'online':st==='down'?'down':'disabled')+'</span></div>'+kv('Public IP(s)',((n.ips||[]).join('<br>'))||'-')+kv('Mgmt',esc(n.mgmtAddress)+':'+(n.port||''))+kv('Country',(n.country?flag(n.country)+' '+n.country:'-'))+kv('Users online',fmt(n.usersOnline))+kv('Live ↑ / ↓',fmtBytes(n.up)+' / '+fmtBytes(n.down))+(n.limitBytes?kv('Traffic used',fmtBytes(n.usedBytes)+' / '+fmtBytes(n.limitBytes)+' ('+Math.round((n.usedBytes||0)/n.limitBytes*100)+'%)'):kv('Traffic used',n.usedBytes!=null?fmtBytes(n.usedBytes):'—'))+kv('Reachable by domain',n.reachableByDomain?'yes':'no')+'<div class="chain-sec"><h4>Serves inbounds ('+inbs.length+')</h4><div class="pillist">'+(inbs.length?inbs.map(t=>'<span class="pill">'+esc(t)+'</span>').join(''):'<span class="s">none</span>')+'</div></div><div class="chain-sec"><h4>Reachable via ('+doms.length+' domains)</h4>'+domHtml+'</div>';
+  els.modalBody.innerHTML='<div class="det-title">'+(flag(n.country)?flag(n.country)+' ':'')+esc(n.name)+' <span class="badge '+st+'">'+(st==='up'?'online':st==='down'?'down':'disabled')+'</span></div>'+kv('Public IP(s)',(n.ips&&n.ips.length)?n.ips.map(ip=>esc(ip)+cp(ip)).join('<br>'):'-')+kv('Mgmt',esc(n.mgmtAddress)+':'+(n.port||'')+cp(n.mgmtAddress))+kv('Country',(n.country?flag(n.country)+' '+n.country:'-'))+kv('Users online',fmt(n.usersOnline))+kv('Live ↑ / ↓',fmtBytes(n.up)+' / '+fmtBytes(n.down))+(n.limitBytes?kv('Traffic used',fmtBytes(n.usedBytes)+' / '+fmtBytes(n.limitBytes)+' ('+Math.round((n.usedBytes||0)/n.limitBytes*100)+'%)'):kv('Traffic used',n.usedBytes!=null?fmtBytes(n.usedBytes):'—'))+kv('Reachable by domain',n.reachableByDomain?'yes':'no')+'<div class="chain-sec"><h4>Serves inbounds ('+inbs.length+')</h4><div class="pillist">'+(inbs.length?inbs.map(t=>'<span class="pill">'+esc(t)+'</span>').join(''):'<span class="s">none</span>')+'</div></div><div class="chain-sec"><h4>Reachable via ('+doms.length+' domains)</h4>'+domHtml+'</div>';
   els.modalBg.classList.add('show');
 }function showDomainDetailByName(name){const d=MODEL.domains.find(x=>x.domain===name);if(!d)return;switchTab('details');const hasDownNode=[...d.matched].some(u=>nodeDown(MODEL.nodeByUuid.get(u)));
   const a=DATA.hosts.flatMap(h=>h.addresses).find(z=>z.domain===name)||{ips:[],source:''};
   const ipsHtml=a.ips.length?a.ips.map(x=>{const n=x.nodeUuid?MODEL.nodeByUuid.get(x.nodeUuid):null;const dn=nodeDown(n);const dis=n&&n.disabled;const col=!n?"rgba(255,138,91,.6)":dn?"rgba(255,84,112,.85)":dis?"rgba(120,130,150,.6)":"rgba(39,227,164,.55)";const lab=!n?(x.ip+" &bull; unregistered IP"):(x.ip+" &rarr; "+esc(n.name)+(dn?" &bull; DOWN":dis?" &bull; off":""));return "<span class=\"pill\" style=\"border-color:"+col+(dn?";color:#ff8a9c":"")+"\">"+lab+"</span>";}).join(""):'<span class="empty" style="margin:4px">no A records (dead)</span>';
-  els.panelDetails.innerHTML=`<div class="det-title">🌐 ${esc(name)} ${d.dead?'<span class="badge down">dead DNS</span>':d.foreign.size?'<span class="badge" style="background:rgba(255,138,91,.18);color:var(--foreign)">foreign IPs</span>':hasDownNode?'<span class="badge down">node down</span>':'<span class="badge up">ok</span>'}</div>
+  els.panelDetails.innerHTML=`<div class="det-title">🌐 ${esc(name)}${cp(name)} ${d.dead?'<span class="badge down">dead DNS</span>':d.foreign.size?'<span class="badge" style="background:rgba(255,138,91,.18);color:var(--foreign)">foreign IPs</span>':hasDownNode?'<span class="badge down">node down</span>':'<span class="badge up">ok</span>'}</div>
    ${kv('Inbound(s)',[...d.inboundTags].join(', ')||'—')}${kv('Used by hosts',d.hosts.length)}${kv('Matched nodes',d.matched.size)}${kv('Users (via matched)',fmt(d.users))}${kv('Resolves via',a.source||'—')}
    <div style="margin-top:8px;font-size:12px;color:var(--mut)">Resolved IPs</div><div class="pillist">${ipsHtml}</div>`;}
 function showHostDetail(h){switchTab('details');

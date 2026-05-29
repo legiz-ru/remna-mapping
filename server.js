@@ -171,6 +171,7 @@ async function scan(panelUrl, token) {
     if (!nodeIpIndex.has(ip)) nodeIpIndex.set(ip, nd.uuid);
     (ipToNodes.get(ip) || ipToNodes.set(ip, []).get(ip)).push(nd.uuid);
   }
+  const nodeByUuid = new Map(nodes.map(n => [n.uuid, n]));   // O(1) lookups (mirrors nodeIpIndex)
 
   // ---- collect every unique hostname to resolve ----
   const toResolve = new Set();
@@ -199,7 +200,7 @@ async function scan(panelUrl, token) {
     });
     // attach domain names to matched nodes
     for (const a of addresses) for (const x of a.ips) if (x.nodeUuid) {
-      const nd = nodes.find(n => n.uuid === x.nodeUuid);
+      const nd = nodeByUuid.get(x.nodeUuid);
       const label = a.domain || a.raw;
       if (nd && !nd.domains.includes(label)) nd.domains.push(label);
     }
@@ -209,7 +210,7 @@ async function scan(panelUrl, token) {
     // attributed live throughput: this host's inbound tag, summed over the nodes that serve it
     const tag = meta ? meta.tag : null;
     let hUp = 0, hDown = 0;
-    if (tag) for (const u of servingNodeUuids) { const nd = nodes.find(n => n.uuid === u); const t = nd && nd.inboundTraffic[tag]; if (t) { hUp += t.up; hDown += t.down; } }
+    if (tag) for (const u of servingNodeUuids) { const nd = nodeByUuid.get(u); const t = nd && nd.inboundTraffic[tag]; if (t) { hUp += t.up; hDown += t.down; } }
     return {
       uuid: h.uuid, remark: h.remark, disabled: !!h.isDisabled, port: h.port,
       inboundUuid: inb, inboundTag: meta ? meta.tag : (inb ? inb.slice(0, 8) : null),
@@ -249,7 +250,7 @@ async function scan(panelUrl, token) {
   for (const [ip, us] of ipToNodes) {
     const uniq = [...new Set(us)];
     if (uniq.length > 1) {
-      const names = uniq.map(u => (nodes.find(n => n.uuid === u) || {}).name).filter(Boolean);
+      const names = uniq.map(u => (nodeByUuid.get(u) || {}).name).filter(Boolean);
       issues.push({ severity: 'warn', type: 'DUP_NODE_IP', node: uniq[0], nodeName: names[0] || null, message: `IP ${ip} is shared by ${uniq.length} nodes: ${names.join(', ')}.` });
     }
   }
