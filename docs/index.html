@@ -1,0 +1,1183 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>REMNAWAVE Topology Mapper — GitHub Pages</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3-sankey/0.12.3/d3-sankey.min.js"></script>
+<style>
+  :root{
+    /* Remnawave palette — Mantine "dark" (GitHub-style) surfaces + cyan/teal primary.
+       Sources: remnawave/frontend src/shared/constants/theme/theme.ts (primaryColor:'cyan',
+       primaryShade:8, defaultRadius:'md', dark[] = #010409..#c9d1d9), global.css scrollbar
+       gradient #0d9488→#06b6d4, card.module.css linear-gradient(dark-6,dark-7). */
+    --bg0:#010409; --bg1:#0d1117; --card:rgba(255,255,255,.04); --cardb:rgba(255,255,255,.08);
+    --txt:#c9d1d9; --mut:#8b949e; --faint:#6e7681;
+    --up:#22d3ee; --down:#ff6b81; --warn:#e3b341; --err:#ff6b81; --info:#8b949e;
+    --acc:#06b6d4; --acc2:#0d9488; --acc-hi:#22d3ee;
+    --dom:#06b6d4; --inb:#a78bfa; --host:#22d3ee; --foreign:#f0883e; --disabled:#6e7681;
+    /* Mantine dark scale (theme.ts colors.dark[4..7]) used for borders & surfaces */
+    --dark4:#484f58; --dark5:#30363d; --dark6:#21262d; --dark7:#161b22;
+    /* Radius — Mantine defaultRadius:'md' = 8px; sm = 4px; lg = 16px (Mantine defaults) */
+    --rad:8px; --rad-sm:4px; --rad-lg:16px;
+    /* Borders — subtle white-alpha hairlines like Mantine dark surfaces (modal/fieldset overrides) */
+    --bd:rgba(255,255,255,.08); --bd-strong:#30363d; --bd-soft:rgba(255,255,255,.06);
+    /* Elevation — Mantine default shadows (sm/md/lg) + menu dropdown shadow (overrides/menu.ts) */
+    --shadow-xs:0 1px 3px rgba(0,0,0,.05),0 1px 2px rgba(0,0,0,.1);
+    --shadow-sm:0 1px 3px rgba(0,0,0,.05),rgba(0,0,0,.05) 0 10px 15px -5px,rgba(0,0,0,.04) 0 7px 7px -5px;
+    --shadow-md:0 1px 3px rgba(0,0,0,.05),rgba(0,0,0,.05) 0 20px 25px -5px,rgba(0,0,0,.04) 0 10px 10px -5px;
+    --shadow-lg:0 1px 3px rgba(0,0,0,.05),rgba(0,0,0,.05) 0 28px 23px -7px,rgba(0,0,0,.04) 0 12px 12px -7px;
+    --shadow:0 8px 32px rgba(0,0,0,.4),0 2px 8px rgba(0,0,0,.2);
+    /* Spacing — Mantine spacing scale (xs/sm/md/lg/xl) */
+    --sp-xs:10px; --sp-sm:12px; --sp-md:16px; --sp-lg:20px; --sp-xl:32px;
+    /* Mantine control sizing: size sm = 36px height; inputs padding-y 6px, button padding-x 18px */
+    --ctrl-h:36px;
+    /* Focus ring — theme.ts focusRing:'never' → focus shown via accent border, no big outer glow */
+    --focus:rgba(6,182,212,.55);
+    /* Card surface gradient (overrides/card.module.css: dark-6 → dark-7) */
+    --card-grad:linear-gradient(135deg,var(--dark6) 0%,var(--dark7) 100%);
+    /* Standard transition (overrides/buttons.tsx Button styles.root) */
+    --tr:all .2s ease;
+  }
+  *{box-sizing:border-box}
+  /* Accent focus-visible for keyboard nav (theme.ts focusRing:'never' → no default ring; provide our own). */
+  :focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+  html,body{margin:0;height:100%}
+  body{font-family:Montserrat,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+    background:radial-gradient(1200px 800px at 70% -10%,#161b22 0%,var(--bg1) 42%,var(--bg0) 100%);
+    color:var(--txt);height:100vh;overflow:hidden;display:flex;flex-direction:column}
+  .bar{display:flex;align-items:center;gap:var(--sp-xs);padding:var(--sp-sm) var(--sp-md);border-bottom:1px solid var(--bd);
+       background:rgba(13,17,23,.78);backdrop-filter:blur(10px);flex-wrap:wrap;z-index:6}
+  .logo{font-weight:600;font-size:15px;display:flex;align-items:center;gap:9px;white-space:nowrap;letter-spacing:.2px}
+  .logo .dot{width:10px;height:10px;border-radius:50%;background:linear-gradient(135deg,var(--acc2),var(--acc-hi));box-shadow:0 0 12px var(--acc)}
+  /* Mantine input: height 36px (size sm), padding-y 6px, border 1px solid, radius md.
+     focusRing:'never' → no outer glow, just an accent border on focus (overrides/inputs.ts). */
+  .bar input[type=text],.bar input[type=password]{background:rgba(255,255,255,.04);border:1px solid var(--bd);
+    color:var(--txt);border-radius:var(--rad);height:var(--ctrl-h);padding:6px 12px;font-size:14px;outline:none;transition:border-color .15s ease,box-shadow .15s ease}
+  .bar input::placeholder{color:var(--faint)}
+  .bar input:hover{border-color:var(--bd-strong)}
+  .bar input:focus{border-color:var(--acc);box-shadow:0 0 0 1px var(--acc)}
+  #panelUrl{width:200px} #token{width:200px;flex:1;min-width:150px}
+  /* Mantine Button: height 36px (size sm), padding-x 18px, font-size 14px, font-weight 500 (medium),
+     radius md, transition all .2s ease (overrides/buttons.tsx). Filled accent for the primary CTA. */
+  .btn{background:var(--acc);border:1px solid transparent;color:#06222a;font-weight:500;line-height:1;
+       border-radius:var(--rad);height:var(--ctrl-h);padding:0 18px;font-size:14px;cursor:pointer;white-space:nowrap;
+       display:inline-flex;align-items:center;justify-content:center;gap:7px;transition:var(--tr)}
+  .btn:hover{background:var(--acc-hi)}
+  .btn:active{transform:translateY(1px)}
+  .btn:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+  .btn:disabled{opacity:.45;cursor:default;transform:none}
+  /* Mantine variant:'light' — translucent accent tint, colored text, no solid border, soft hover. */
+  .btn.ghost{background:rgba(6,182,212,.08);border:1px solid transparent;color:var(--acc-hi);font-weight:500}
+  .btn.ghost:hover{background:rgba(6,182,212,.15)}
+  .switch{display:flex;align-items:center;gap:7px;font-size:13px;color:var(--mut);user-select:none}
+  /* Mantine Switch (radius:'md'): track 36×20, thumb 16, accent gradient when checked, .15s ease. */
+  .switch input{width:36px;height:20px;appearance:none;background:var(--dark5);border:1px solid var(--bd);border-radius:var(--rad);position:relative;cursor:pointer;transition:background .15s ease,border-color .15s ease}
+  .switch input:checked{background:var(--acc);border-color:var(--acc)}
+  .switch input::after{content:"";position:absolute;width:14px;height:14px;border-radius:calc(var(--rad) - 3px);background:#fff;top:2px;left:2px;transition:left .15s ease;box-shadow:0 1px 2px rgba(0,0,0,.3)}
+  .switch input:checked::after{left:19px}
+  .switch input:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+  .meta{font-size:11px;color:var(--mut);margin-left:auto;text-align:right;line-height:1.45}
+  .privacy{font-size:11.5px;color:#9fbcc8;background:rgba(6,182,212,.06);border-bottom:1px solid var(--bd);padding:8px var(--sp-md);line-height:1.4}
+  .privacy b{color:#c9d1d9;font-weight:600}
+  .privacy a{color:var(--acc-hi);text-decoration:none;border-bottom:1px solid rgba(34,211,238,.4)}
+  .credits{font-size:11px;color:var(--mut);background:rgba(255,255,255,.02);border-bottom:1px solid var(--bd);padding:6px var(--sp-md);line-height:1.5;display:flex;flex-wrap:wrap;gap:3px 14px;align-items:center}
+  .credits b{color:var(--txt);font-weight:600} .credits .sep{opacity:.4}
+  .credits a{color:var(--acc-hi);text-decoration:none;border-bottom:1px solid rgba(34,211,238,.4)}
+  .credits a:hover{color:#bfeaff;border-bottom-color:#bfeaff}
+  .privacy a:hover{color:#7ce9f7;border-bottom-color:#7ce9f7}
+  .stats{display:flex;gap:var(--sp-sm);padding:var(--sp-sm) var(--sp-md);flex-wrap:wrap;border-bottom:1px solid var(--bd);background:rgba(13,17,23,.4)}
+  /* Mantine Card: gradient dark-6→dark-7, withBorder hairline, radius md, soft elevation (overrides/card). */
+  .stat{background:var(--card-grad);border:1px solid var(--bd);border-radius:var(--rad);padding:10px 14px;min-width:90px;box-shadow:var(--shadow-xs)}
+  .stat .v{font-size:18px;font-weight:600;line-height:1.1}
+  .stat .v small{font-size:12px;color:var(--mut);font-weight:600}
+  .stat .l{font-size:10px;color:var(--mut);text-transform:uppercase;letter-spacing:.5px;margin-top:4px}
+  /* Mantine Badge: radius md, outline variant (1px hairline + tinted text), compact padding. */
+  .chip{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;padding:2px 8px;border-radius:var(--rad);border:1px solid transparent;margin-right:4px;line-height:1.5}
+  .chip.e{background:rgba(255,107,129,.12);border-color:rgba(255,107,129,.35);color:var(--err)} .chip.w{background:rgba(227,179,65,.12);border-color:rgba(227,179,65,.35);color:var(--warn)} .chip.i{background:rgba(139,148,158,.12);border-color:rgba(139,148,158,.3);color:var(--info)}
+
+  .toolbar{display:flex;align-items:center;gap:var(--sp-xs);padding:var(--sp-sm) var(--sp-md);border-bottom:1px solid var(--bd);
+           background:rgba(13,17,23,.55);flex-wrap:wrap;z-index:5}
+  /* Mantine SegmentedControl: rounded track (radius md) with inner padding; the active segment
+     gets a raised control surface (dark-6 + hairline + small shadow), inactive is muted. */
+  .views{display:flex;gap:2px;background:rgba(255,255,255,.03);border:1px solid var(--bd);border-radius:var(--rad);padding:4px}
+  .views button{background:transparent;border:none;color:var(--mut);font-size:13px;font-weight:500;
+                padding:6px 14px;border-radius:calc(var(--rad) - 2px);cursor:pointer;display:flex;align-items:center;gap:6px;transition:var(--tr)}
+  .views button:hover{color:var(--txt);background:rgba(255,255,255,.04)}
+  .views button.on{background:var(--dark6);border:1px solid var(--bd);color:#aef0fa;box-shadow:var(--shadow-xs);font-weight:600}
+  /* Mantine input/select: 36px control, radius md, accent border on focus (no outer ring). */
+  .toolbar select,.toolbar input[type=text]{background:rgba(255,255,255,.04);border:1px solid var(--bd);
+    color:var(--txt);border-radius:var(--rad);height:var(--ctrl-h);padding:6px 12px;font-size:13px;outline:none;transition:border-color .15s ease,box-shadow .15s ease}
+  .toolbar select:hover,.toolbar input:hover{border-color:var(--bd-strong)}
+  .toolbar select:focus,.toolbar input:focus{border-color:var(--acc);box-shadow:0 0 0 1px var(--acc)}
+  select option,select optgroup{background:#161b22;color:#c9d1d9}
+  #search{width:170px}
+
+  .wrap{flex:1;display:flex;min-height:0}
+  #viewport{flex:1;position:relative;overflow:hidden}
+  #viewport > svg{width:100%;height:100%;display:block}   /* only the D3 graph svg, NOT nested legend icons */
+  .ic svg{display:block;width:13px;height:13px;flex:0 0 auto}   /* base size for entity icons (overridden per context below) */
+  .vp-svg{cursor:grab} .vp-svg:active{cursor:grabbing}
+  /* Mantine Paper/Card floating surface: radius md, hairline, soft elevation. */
+  .legend{position:absolute;left:14px;bottom:12px;background:rgba(13,17,23,.7);border:1px solid var(--bd);
+          border-radius:var(--rad);padding:10px 12px;font-size:11px;color:var(--mut);backdrop-filter:blur(6px);pointer-events:none;max-width:60%;box-shadow:var(--shadow-sm)}
+  .legend div{display:inline-flex;align-items:center;gap:6px;margin:2px 9px 2px 0}
+  .legend i{width:10px;height:10px;border-radius:50%;display:inline-block}
+  .legend .ic svg{display:block;width:13px;height:13px}
+  .hint{position:absolute;right:14px;bottom:12px;font-size:11px;color:var(--faint);pointer-events:none}
+
+  .side{width:360px;border-left:1px solid var(--bd);display:flex;flex-direction:column;background:rgba(13,17,23,.6);backdrop-filter:blur(8px)}
+  /* Mantine Tabs (default variant): bottom-border indicator, muted→text on hover, accent on active. */
+  .tabs{display:flex;border-bottom:1px solid var(--bd)}
+  .tab{flex:1;text-align:center;padding:11px;font-size:13px;font-weight:500;color:var(--mut);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;transition:var(--tr)}
+  .tab:hover{color:var(--txt);background:rgba(255,255,255,.03)}
+  .tab.active{color:var(--acc-hi);border-bottom-color:var(--acc);font-weight:600}
+  .panel{flex:1;overflow:auto;padding:var(--sp-sm) var(--sp-md)}
+  /* Scrollbar — matches global.css: width 8px, radius 4px, teal→cyan gradient thumb. */
+  .panel::-webkit-scrollbar{width:8px}.panel::-webkit-scrollbar-thumb{background:linear-gradient(180deg,var(--acc2),var(--acc));border-radius:4px;border:1px solid rgba(22,27,35,.8)}
+  /* Mantine Card row: radius md, hairline, gradient surface, soft hover-lift. */
+  .issue{border:1px solid var(--bd);border-radius:var(--rad);padding:10px 12px;margin-bottom:var(--sp-xs);cursor:pointer;transition:var(--tr);background:var(--card-grad)}
+  .issue:hover{border-color:rgba(6,182,212,.45);box-shadow:var(--shadow-xs)} .issue.e{border-left:3px solid var(--err)} .issue.w{border-left:3px solid var(--warn)} .issue.i{border-left:3px solid var(--info)}
+  .issue .t{font-size:11px;font-weight:700;letter-spacing:.4px;display:flex;align-items:center;gap:6px}
+  .issue .t .ic svg{display:block;width:13px;height:13px}
+  .issue .m{font-size:12px;color:var(--mut);margin-top:4px;line-height:1.45;word-break:break-word}
+  .sev-dot{width:8px;height:8px;border-radius:50%}
+  .filterrow{display:flex;gap:6px;margin-bottom:var(--sp-xs);flex-wrap:wrap}
+  /* Mantine outline Badge / chip toggle: radius md, 1px hairline, tinted accent when on. */
+  .filterrow button{font-size:11px;font-weight:500;padding:5px 10px;border-radius:var(--rad);border:1px solid var(--bd);background:rgba(255,255,255,.03);color:var(--mut);cursor:pointer;transition:var(--tr)}
+  .filterrow button:hover{border-color:var(--bd-strong);color:var(--txt)}
+  .filterrow button.on{color:var(--acc-hi);border-color:rgba(6,182,212,.45);background:rgba(6,182,212,.12)}
+  .kv{display:flex;justify-content:space-between;gap:10px;font-size:12.5px;padding:6px 0;border-bottom:1px dashed var(--bd-soft)}
+  .kv span:first-child{color:var(--mut)} .kv span:last-child{text-align:right;word-break:break-word}
+  .det-title{font-size:15px;font-weight:600;margin:2px 0 10px;display:flex;align-items:center;gap:8px}
+  .det-title .ic svg{display:block;width:17px;height:17px;flex:0 0 auto}
+  /* Mantine Badge (radius md, outline-style): hairline border + tinted fill. */
+  .badge{font-size:10px;font-weight:700;padding:2px 8px;border-radius:var(--rad);border:1px solid transparent;line-height:1.6}
+  .badge.up{background:rgba(34,211,238,.12);border-color:rgba(34,211,238,.35);color:var(--up)} .badge.down{background:rgba(255,107,129,.12);border-color:rgba(255,107,129,.35);color:var(--down)} .badge.dis{background:rgba(110,118,129,.16);border-color:rgba(110,118,129,.3);color:var(--disabled)}
+  .empty{color:var(--faint);font-size:12.5px;text-align:center;margin-top:40px;line-height:1.6}
+  .pillist{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+  /* Mantine outline Badge: radius md, hairline border, subtle surface. */
+  .pill{font-size:11px;background:rgba(255,255,255,.03);border:1px solid var(--bd);border-radius:var(--rad);padding:3px 10px}
+  /* Mantine Tooltip override: radius md, dark.6 surface, 1px dark-4 border (overrides/tooltip.ts). */
+  .tooltip{position:absolute;pointer-events:none;background:var(--dark6);border:1px solid var(--dark4);
+           border-radius:var(--rad);padding:8px 11px;font-size:12px;max-width:300px;opacity:0;transition:opacity .12s;z-index:30;box-shadow:var(--shadow)}
+  .tooltip b{color:#fff} .tooltip .s{color:var(--mut);font-size:11px}
+  .tooltip .ic svg{width:13px;height:13px;vertical-align:-2px;margin-right:4px}
+  .cp{cursor:pointer;opacity:.5;margin-left:6px;font-size:11px;user-select:none}
+  .cp:hover{opacity:1;color:var(--acc-hi)}
+  /* Mantine Notification-style toast: radius md, dark surface, menu-dropdown shadow. */
+  .toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--dark6);border:1px solid var(--bd);color:var(--txt);padding:9px 14px;border-radius:var(--rad);font-size:12.5px;opacity:0;pointer-events:none;transition:opacity .2s;z-index:70;box-shadow:var(--shadow);max-width:80vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .toast.show{opacity:1}
+  .modal-bg{position:fixed;inset:0;background:rgba(1,4,9,.7);display:none;align-items:center;justify-content:center;z-index:50}
+  .modal-bg.show{display:flex}
+  /* Mantine Modal override: radius md, content border rgba(255,255,255,.08), header padding sm/lg,
+     gradient card surface, lg elevation (overrides/modal/modal.module.css). */
+  .modal{background:var(--card-grad);border:1px solid var(--bd);border-radius:var(--rad);max-width:560px;width:90%;max-height:84vh;overflow:auto;padding:var(--sp-md) var(--sp-lg);box-shadow:var(--shadow-lg);position:relative}
+  .modal .x{position:absolute;right:14px;top:12px;cursor:pointer;color:var(--mut);font-size:11px;border:1px solid var(--bd);border-radius:var(--rad);padding:4px 10px;transition:var(--tr)}
+  .modal .x:hover{color:var(--txt);border-color:rgba(6,182,212,.45);background:rgba(6,182,212,.08)}
+  .chain-sec{margin-top:var(--sp-md)} .chain-sec h4{font-size:11px;color:var(--mut);text-transform:uppercase;letter-spacing:.6px;margin:0 0 8px;font-weight:700}
+  .chain-row{padding:7px 10px;border:1px solid var(--bd);border-radius:var(--rad);margin-bottom:6px;font-size:12.5px;background:rgba(255,255,255,.02)}
+  .chain-row b{color:var(--acc-hi)} .chain-row .s{color:var(--mut);font-size:11.5px}
+  .err-banner{background:rgba(255,107,129,.12);border:1px solid rgba(255,107,129,.35);color:#ffccd3;padding:10px 14px;margin:var(--sp-xs) var(--sp-md);border-radius:var(--rad);font-size:13px;display:none}
+  .spinner{width:15px;height:15px;border:2px solid rgba(255,255,255,.25);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;display:inline-block;vertical-align:-2px}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .pulse-s{animation:pls 1.7s ease-in-out infinite}@keyframes pls{0%,100%{opacity:1}50%{opacity:.35}}
+  text{user-select:none}
+  /* matrix */
+  .mx-wrap{position:absolute;inset:0;overflow:auto;padding:12px}
+  table.mx{border-collapse:separate;border-spacing:0;font-size:11.5px}
+  /* Mantine Table (highlightOnHover): hairline grid borders (dark-alpha), sticky headers. */
+  table.mx th,table.mx td{border-bottom:1px solid var(--bd-soft);border-right:1px solid rgba(255,255,255,.04)}
+  table.mx thead th{position:sticky;top:0;background:#0d1117;z-index:2;height:118px;vertical-align:bottom;padding:4px}
+  table.mx thead th .rot{writing-mode:vertical-rl;transform:rotate(180deg);white-space:nowrap;color:var(--mut);font-weight:600;max-height:108px;overflow:hidden}
+  table.mx td.rowh,table.mx th.corner{position:sticky;left:0;background:#0d1117;z-index:1;text-align:left;padding:6px 10px;min-width:150px;max-width:200px}
+  table.mx tbody tr:hover td.rowh{background:#10161e}
+  table.mx th.corner{z-index:3}
+  table.mx td.cell{width:20px;height:20px;text-align:center;cursor:pointer;transition:background .12s ease}
+  table.mx td.cell.on{background:var(--acc)} table.mx td.cell:hover{outline:1px solid var(--acc-hi);outline-offset:-1px}
+  .rowh .rname{font-weight:600;color:var(--txt)} .rowh .rsub{color:var(--mut);font-size:10.5px}
+  .grp{font-size:10px;color:var(--faint);padding:2px 6px}
+
+  /* --- Mobile drawer controls: hidden on desktop, shown via @media below --- */
+  #sideToggle{display:none}
+  /* Close handle inside the drawer (base styling; revealed only in drawer mode) */
+  #sideClose{display:none;position:absolute;right:10px;top:8px;z-index:2;
+    font-size:11px;border:1px solid var(--bd);border-radius:var(--rad);padding:4px 10px;
+    background:rgba(255,255,255,.05);color:var(--mut);cursor:pointer;transition:var(--tr)}
+  #sideClose:hover{color:var(--txt);border-color:var(--bd-strong)}
+  /* Backdrop behind the off-canvas side panel on small screens */
+  .side-backdrop{position:fixed;inset:0;background:rgba(5,8,16,.5);backdrop-filter:blur(2px);
+    z-index:14;opacity:0;pointer-events:none;transition:opacity .2s}
+  .side-backdrop.show{opacity:1;pointer-events:auto}
+
+  /* ===================== RESPONSIVE (tablet / phone) ===================== */
+  @media (max-width:820px){
+    /* Top-bar inputs go full width and wrap below the logo/controls */
+    #panelUrl,#token{width:100%;flex:1 1 100%;min-width:0}
+    .bar{gap:8px;padding:10px 12px}
+    .bar .btn,.bar .switch,.bar #interval{flex:0 0 auto}
+    .meta{margin-left:0;flex:1 1 100%;text-align:left;order:9}
+    .privacy{padding:7px 12px}
+
+    /* Stats: allow horizontal scroll instead of crushing tiles */
+    .stats{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;padding:9px 12px}
+    .stat{flex:0 0 auto}
+
+    .toolbar{gap:8px;padding:8px 12px}
+    .toolbar select,.toolbar input[type=text]{padding:8px 10px}
+    .toolbar .btn,.views button{min-height:36px}
+    .views button{padding:7px 11px}
+    #search{width:140px;flex:1 1 140px}
+
+    /* Off-canvas drawer: side panel slides in from the right over the viewport */
+    .wrap{position:relative}
+    .side{position:fixed;top:0;right:0;bottom:0;width:min(86vw,360px);max-width:360px;
+      z-index:15;transform:translateX(100%);transition:transform .25s ease;
+      box-shadow:-12px 0 40px rgba(0,0,0,.5);border-left:1px solid var(--cardb)}
+    .side.open{transform:translateX(0)}
+    #viewport{flex:1 1 100%}
+
+    /* Floating button to open the Issues/Details drawer */
+    #sideToggle{display:inline-flex;align-items:center;gap:6px;position:fixed;
+      right:14px;bottom:14px;z-index:13;min-height:40px;padding:10px 14px;
+      border-radius:24px;box-shadow:0 6px 20px rgba(0,0,0,.45)}
+    /* Close handle inside the drawer header */
+    #sideClose{display:inline-flex}
+    /* Make room for the close handle so it doesn't overlap the tabs */
+    .side .tabs{padding-right:64px}
+  }
+
+  @media (max-width:480px){
+    .logo{font-size:14px}
+    .stat{min-width:80px;padding:6px 11px}
+    .stat .v{font-size:16px}
+    .views button span,.toolbar .switch{font-size:11px}
+    .modal{padding:14px 14px;width:94%;max-height:88vh}
+    .legend{max-width:75%;font-size:10px}
+    .hint{display:none}
+    #search{width:100%;flex:1 1 100%}
+  }
+</style>
+</head>
+<body>
+  <div class="bar">
+    <div class="logo"><span class="dot"></span> REMNAWAVE Topology Mapper</div>
+    <input id="panelUrl" type="text" placeholder="panel.example.com" autocomplete="off" spellcheck="false"/>
+    <input id="token" type="password" placeholder="API token" autocomplete="off" spellcheck="false"/>
+    <button id="scanBtn" class="btn">Scan</button>
+    <label class="switch"><input id="autoTgl" type="checkbox"/> Auto</label>
+    <select id="interval" class="btn ghost" style="padding:8px"><option value="15">15s</option><option value="30" selected>30s</option><option value="60">60s</option><option value="120">2m</option></select>
+    <label class="switch" title="Remember URL + token in this browser"><input id="rememberTgl" type="checkbox" checked/> Remember</label>
+    <div class="meta" id="meta">not scanned yet</div>
+  </div>
+
+  <div class="privacy"><b>GitHub Pages edition — runs entirely in your browser.</b> Your token is sent <b>directly</b> from this browser to your panel (no intermediate server). DNS uses <a href="https://dns.google" target="_blank" rel="noopener noreferrer">Google DoH</a>. <b>CORS required:</b> your panel's reverse proxy must allow <code style="font-family:monospace;background:rgba(6,182,212,.1);padding:1px 5px;border-radius:3px;color:var(--acc-hi)">Origin: https://legiz-ru.github.io</code> — see the <a href="https://github.com/legiz-ru/remna-mapping#cors-setup" target="_blank" rel="noopener noreferrer">CORS setup instructions</a>. For panels without CORS use the <a href="https://github.com/legiz-ru/remna-mapping#quick-start-docker" target="_blank" rel="noopener noreferrer">self-hosted Docker version</a> instead.</div>
+  <div class="credits">
+    <span>A <a href="https://gig.ovh" target="_blank" rel="noopener noreferrer"><b>GIG.ovh</b></a> project by <a href="https://github.com/DigneZzZ" target="_blank" rel="noopener noreferrer">DigneZzZ</a></span>
+    <span class="sep">·</span>
+    <span>More projects: <a href="https://ziphub.dev" target="_blank" rel="noopener noreferrer">ZipHub.dev</a>, <a href="https://openode.xyz" target="_blank" rel="noopener noreferrer">OpeNode.xyz</a></span>
+    <span class="sep">·</span>
+    <span>Telegram: <a href="https://t.me/gig_ovh" target="_blank" rel="noopener noreferrer">@gig_ovh</a>, <a href="https://t.me/+I57W0d7XyuE5ODQy" target="_blank" rel="noopener noreferrer">OpeNode</a></span>
+  </div>
+  <div class="stats" id="stats" style="display:none"></div>
+
+  <div class="toolbar" id="toolbar" style="display:none">
+    <div class="views" id="views"></div>
+    <select id="fInbound" title="Filter by inbound"><option value="all">All inbounds</option></select>
+    <label class="switch"><input id="fIssues" type="checkbox"/> Issues only</label>
+    <label class="switch" title="Overlay mode for Netbird / private node IPs. When a node address is an overlay IP that your domains do not resolve to, match domain to node by shared inbound instead of public IP, and stop flagging the public IPs as foreign. Leave OFF for normal panels with public node IPs."><input id="fOverlay" type="checkbox"/> Overlay (Netbird)</label>
+    <label class="switch" title="Uniform node icons — fixed size, ignore users-online scaling and show only the entity glyph"><input id="fUniform" type="checkbox" checked autocomplete="off"/> Uniform icons</label>
+    <input id="search" type="text" placeholder="search domain / node / host" autocomplete="off"/>
+    <button id="expandBtn" class="btn ghost" title="Expand the whole tree">Expand all</button>
+    <button id="collapseBtn" class="btn ghost" title="Collapse the tree">Collapse</button>
+    <button id="fitBtn" class="btn ghost" title="Reset zoom / fit">Fit</button>
+    <button id="exportBtn" class="btn ghost" title="Download detected issues/errors as CSV + the full topology as JSON">Export issues</button>
+  </div>
+
+  <div class="err-banner" id="errBanner"></div>
+
+  <div class="wrap">
+    <div id="viewport"><div class="empty" style="margin-top:80px">Enter panel URL + token and press Scan.</div></div>
+    <div class="side" id="side">
+      <button id="sideClose" type="button" title="Close panel">close</button>
+      <div class="tabs">
+        <div class="tab active" data-tab="issues">Issues <span id="issueCount"></span></div>
+        <div class="tab" data-tab="details">Details</div>
+      </div>
+      <div class="panel" id="panelIssues"><div class="empty">Run a scan to detect inconsistencies.</div></div>
+      <div class="panel" id="panelDetails" style="display:none"><div class="empty">Click any element to inspect it.</div></div>
+    </div>
+  </div>
+  <div class="side-backdrop" id="sideBackdrop"></div>
+  <button id="sideToggle" type="button" class="btn" title="Show issues & details panel">Panel <span id="sideToggleCount"></span></button>
+  <div class="tooltip" id="tooltip"></div>
+  <div class="toast" id="toast"></div>
+  <div class="modal-bg" id="modalBg"><div class="modal"><span class="x" id="modalX">close</span><div id="modalBody"></div></div></div>
+
+<script>
+/* ===== Browser scan engine (ported from server.js — no Node.js required) ===== */
+const DNS_TIMEOUT_MS = 4000;
+const DNS_CONCURRENCY = 10;
+const RESOLVE_TTL_MS = 30000;
+const RESOLVE_CACHE_MAX = 2000;
+
+function isIp(s) {
+  if (typeof s !== 'string') return false;
+  s = s.trim();
+  if (/^(\d{1,3}\.){3}\d{1,3}$/.test(s) && s.split('.').every(p => +p <= 255)) return true;
+  if (s.includes(':') && /^[\da-fA-F:]+$/.test(s) && s.split(':').length >= 3) return true;
+  return false;
+}
+function isIpv6(s) {
+  return typeof s === 'string' && s.includes(':') && /^[\da-fA-F:]+$/.test(s.trim()) && s.trim().split(':').length >= 3;
+}
+function stripPort(s) {
+  s = String(s).trim();
+  const m = s.match(/^\[(.+)\](?::\d+)?$/);
+  if (m) return m[1];
+  if (isIpv6(s)) return s;
+  return s.replace(/:\d+$/, '');
+}
+function parseBytes(v) {
+  if (v == null) return 0;
+  if (typeof v === 'number') return Number.isFinite(v) ? v : 0;
+  const s = String(v).trim();
+  if (!s || s === '0') return 0;
+  const m = s.replace(',', '.').match(/^([\d.]+)\s*([KMGTPE]?)(i?)B?$/i);
+  if (!m) { const n = Number(s); return Number.isFinite(n) ? n : 0; }
+  const val = parseFloat(m[1]);
+  if (!Number.isFinite(val)) return 0;
+  const base = m[3] ? 1024 : 1000;
+  const pow = { '': 0, K: 1, M: 2, G: 3, T: 4, P: 5, E: 6 }[m[2].toUpperCase()] || 0;
+  return Math.round(val * Math.pow(base, pow));
+}
+function normalizePanelUrl(u) {
+  if (!u) throw new Error('panelUrl is required');
+  u = String(u).trim().replace(/\/+$/, '');
+  if (!/^https?:\/\//i.test(u)) u = 'https://' + u;
+  return u;
+}
+function withTimeout(promise, ms, onTimeoutValue) {
+  let t;
+  const timeout = new Promise(res => { t = setTimeout(() => res(onTimeoutValue), ms); });
+  return Promise.race([promise.finally(() => clearTimeout(t)), timeout]);
+}
+const resolveCache = new Map();
+function pruneResolveCache() {
+  const now = Date.now();
+  for (const [k, v] of resolveCache) if (v.exp <= now) resolveCache.delete(k);
+  if (resolveCache.size >= RESOLVE_CACHE_MAX) resolveCache.clear();
+}
+async function resolveHost(name) {
+  name = stripPort(name).trim();
+  if (isIp(name)) return { ips: [name], source: 'literal' };
+  const c = resolveCache.get(name);
+  if (c && c.exp > Date.now()) return c.res;
+  const res = await resolveUncached(name);
+  if (resolveCache.size >= RESOLVE_CACHE_MAX) pruneResolveCache();
+  resolveCache.set(name, { res, exp: Date.now() + RESOLVE_TTL_MS });
+  return res;
+}
+async function resolveUncached(name) {
+  try {
+    const q = type => withTimeout(
+      fetch(`https://dns.google/resolve?name=${encodeURIComponent(name)}&type=${type}`,
+        { headers: { accept: 'application/dns-json' } }).then(x => x.json()).catch(() => null),
+      DNS_TIMEOUT_MS, null);
+    const [ra, raaaa] = await Promise.all([q('A'), q('AAAA')]);
+    const pick = (r, t) => (r && (r.Answer || []).filter(a => a.type === t).map(a => a.data)) || [];
+    const ips = [...pick(ra, 1), ...pick(raaaa, 28)];
+    if (ips.length) return { ips, source: 'doh' };
+    if (ra || raaaa) {
+      const status = (ra && ra.Status != null) ? ra.Status : (raaaa && raaaa.Status);
+      return { ips: [], source: 'doh', error: 'NXDOMAIN/NoData (status ' + status + ')' };
+    }
+  } catch (e) { return { ips: [], source: 'doh', error: e.message }; }
+  return { ips: [], source: 'none', error: 'no A/AAAA records' };
+}
+async function mapPool(items, limit, fn) {
+  const arr = [...items]; let i = 0;
+  const worker = async () => { while (i < arr.length) { const idx = i++; await fn(arr[idx], idx); } };
+  await Promise.all(Array.from({ length: Math.max(1, Math.min(limit, arr.length || 1)) }, worker));
+}
+function splitAddress(addr) {
+  if (!addr) return [];
+  return String(addr).split(',').map(s => s.trim()).filter(Boolean);
+}
+async function panelGet(base, token, p) {
+  const url = base + p;
+  const ctrl = new AbortController();
+  const to = setTimeout(() => ctrl.abort(), 20000);
+  try {
+    const r = await fetch(url, {
+      headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+      signal: ctrl.signal,
+    });
+    const text = await r.text();
+    let body; try { body = JSON.parse(text); } catch { body = text; }
+    return { ok: r.ok, status: r.status, body };
+  } finally { clearTimeout(to); }
+}
+async function scan(panelUrl, token) {
+  const base = normalizePanelUrl(panelUrl);
+  const [hostsR, nodesR, profR, statsR, metricsR] = await Promise.all([
+    panelGet(base, token, '/api/hosts'),
+    panelGet(base, token, '/api/nodes'),
+    panelGet(base, token, '/api/config-profiles').catch(() => ({ ok: false })),
+    panelGet(base, token, '/api/system/stats').catch(() => ({ ok: false })),
+    panelGet(base, token, '/api/system/nodes/metrics').catch(() => ({ ok: false })),
+  ]);
+  if (!hostsR.ok) throw new Error('GET /api/hosts failed: HTTP ' + hostsR.status + ' ' + JSON.stringify(hostsR.body).slice(0, 200));
+  if (!nodesR.ok) throw new Error('GET /api/nodes failed: HTTP ' + nodesR.status + ' ' + JSON.stringify(nodesR.body).slice(0, 200));
+  const rawHosts = (hostsR.body && hostsR.body.response) || [];
+  const rawNodes = (nodesR.body && nodesR.body.response) || [];
+  const inboundMeta = {};
+  const profs = profR && profR.ok && profR.body && profR.body.response && profR.body.response.configProfiles || [];
+  for (const pr of profs) for (const ib of (pr.inbounds || []))
+    inboundMeta[ib.uuid] = { uuid: ib.uuid, tag: ib.tag, port: ib.port, type: ib.type, profileUuid: pr.uuid, profileName: pr.name };
+  const metricsByUuid = new Map();
+  {
+    const mnodes = (metricsR && metricsR.ok && metricsR.body && metricsR.body.response && metricsR.body.response.nodes) || [];
+    for (const mn of mnodes) {
+      const byTag = {}; let up = 0, down = 0;
+      for (const s of (mn.inboundsStats || [])) {
+        const u = parseBytes(s.upload), d = parseBytes(s.download);
+        up += u; down += d;
+        const t = byTag[s.tag] || (byTag[s.tag] = { up: 0, down: 0 });
+        t.up += u; t.down += d;
+      }
+      if (mn.nodeUuid) metricsByUuid.set(mn.nodeUuid, { up, down, byTag });
+    }
+  }
+  const nodeIpIndex = new Map();
+  const ipToNodes = new Map();
+  const nodes = rawNodes.map(n => {
+    const ips = new Set();
+    if (isIp(n.address)) ips.add(n.address);
+    if (isIp(n.name)) ips.add(n.name);
+    const serves = (n.configProfile && n.configProfile.activeInbounds || []).map(i => i.uuid);
+    for (const i of (n.configProfile && n.configProfile.activeInbounds || []))
+      if (!inboundMeta[i.uuid]) inboundMeta[i.uuid] = { uuid: i.uuid, tag: i.tag, port: i.port, type: i.type };
+    const m = metricsByUuid.get(n.uuid) || { up: 0, down: 0, byTag: {} };
+    return {
+      uuid: n.uuid, name: n.name, mgmtAddress: n.address, port: n.port,
+      ips: [...ips], country: n.countryCode || null,
+      connected: !!n.isConnected, disabled: !!n.isDisabled,
+      usersOnline: n.usersOnline || 0,
+      usedBytes: n.trafficUsedBytes != null ? Number(n.trafficUsedBytes) : null,
+      limitBytes: n.trafficLimitBytes != null ? Number(n.trafficLimitBytes) : null,
+      trackingActive: !!n.isTrafficTrackingActive,
+      resetDay: n.trafficResetDay != null ? n.trafficResetDay : null,
+      notifyPercent: n.notifyPercent != null ? n.notifyPercent : null,
+      up: m.up, down: m.down, inboundTraffic: m.byTag, serves, domains: [],
+    };
+  });
+  for (const nd of nodes) for (const ip of nd.ips) {
+    if (!nodeIpIndex.has(ip)) nodeIpIndex.set(ip, nd.uuid);
+    (ipToNodes.get(ip) || ipToNodes.set(ip, []).get(ip)).push(nd.uuid);
+  }
+  const nodeByUuid = new Map(nodes.map(n => [n.uuid, n]));
+  const toResolve = new Set();
+  for (const h of rawHosts) for (const tok of splitAddress(h.address)) { const c = stripPort(tok); if (!isIp(c)) toResolve.add(c); }
+  const resolveMap = {};
+  await mapPool(toResolve, DNS_CONCURRENCY, async d => { resolveMap[d] = await resolveHost(d); });
+  const issues = [];
+  const allResolvedIps = new Set();
+  const hosts = rawHosts.map(h => {
+    const inb = h.inbound && h.inbound.configProfileInboundUuid || null;
+    const meta = inb ? inboundMeta[inb] : null;
+    const addresses = splitAddress(h.address).map(tok => {
+      const clean = stripPort(tok);
+      if (isIp(clean)) {
+        const nodeUuid = nodeIpIndex.get(clean) || null;
+        allResolvedIps.add(clean);
+        if (!nodeUuid) issues.push({ severity: 'warn', type: 'STALE_IP_HOST', host: h.uuid, hostRemark: h.remark, message: `Host "${h.remark}" points at IP ${clean} which is not any node in the panel.` });
+        return { raw: tok, kind: 'ip', ips: [{ ip: clean, nodeUuid }] };
+      }
+      const res = resolveMap[clean] || { ips: [], source: 'none', error: 'unresolved' };
+      const ips = res.ips.map(ip => { allResolvedIps.add(ip); return { ip, nodeUuid: nodeIpIndex.get(ip) || null }; });
+      return { raw: tok, kind: 'domain', domain: clean, source: res.source, error: res.error || null, ips };
+    });
+    for (const a of addresses) for (const x of a.ips) if (x.nodeUuid) {
+      const nd = nodeByUuid.get(x.nodeUuid);
+      const label = a.domain || a.raw;
+      if (nd && !nd.domains.includes(label)) nd.domains.push(label);
+    }
+    const servingNodeUuids = inb ? nodes.filter(n => n.serves.includes(inb)).map(n => n.uuid) : [];
+    if (inb && servingNodeUuids.length === 0 && !h.isDisabled)
+      issues.push({ severity: 'error', type: 'HOST_NO_NODES', host: h.uuid, hostRemark: h.remark, message: `Host "${h.remark}" uses inbound ${meta ? meta.tag : inb} but no node serves that inbound.` });
+    const tag = meta ? meta.tag : null;
+    let hUp = 0, hDown = 0;
+    if (tag) for (const u of servingNodeUuids) { const nd = nodeByUuid.get(u); const t = nd && nd.inboundTraffic[tag]; if (t) { hUp += t.up; hDown += t.down; } }
+    return {
+      uuid: h.uuid, remark: h.remark, disabled: !!h.isDisabled, port: h.port,
+      inboundUuid: inb, inboundTag: meta ? meta.tag : (inb ? inb.slice(0, 8) : null),
+      addresses, servingNodeUuids, up: hUp, down: hDown,
+    };
+  });
+  const domainHosts = {};
+  for (const h of hosts) for (const a of h.addresses) if (a.kind === 'domain')
+    (domainHosts[a.domain] = domainHosts[a.domain] || []).push(h.remark);
+  for (const dom of Object.keys(resolveMap)) {
+    const res = resolveMap[dom];
+    const usedBy = [...new Set(domainHosts[dom] || [])];
+    if (!res.ips.length) {
+      issues.push({ severity: 'error', type: 'DNS_DEAD', domain: dom, hosts: usedBy, message: `Domain ${dom} does not resolve to any IP (${res.error || 'no records'}). Used by: ${usedBy.join(', ') || '—'}.` });
+    } else {
+      const foreign = res.ips.filter(ip => !nodeIpIndex.has(ip));
+      if (foreign.length) issues.push({ severity: 'warn', type: 'FOREIGN_IP', domain: dom, ips: foreign, hosts: usedBy, message: `Domain ${dom} resolves to ${foreign.length} IP(s) not registered as nodes: ${foreign.join(', ')}. Used by: ${usedBy.join(', ') || '—'}.` });
+    }
+  }
+  const inboundsWithDomainHost = new Set();
+  for (const h of hosts) if (h.inboundUuid && h.addresses.some(a => a.kind === 'domain')) inboundsWithDomainHost.add(h.inboundUuid);
+  for (const nd of nodes) {
+    nd.reachableByDomain = nd.ips.some(ip => allResolvedIps.has(ip));
+    if (!nd.connected && !nd.disabled)
+      issues.push({ severity: 'info', type: 'NODE_DOWN', node: nd.uuid, nodeName: nd.name, message: `Node "${nd.name}" is currently disconnected.` });
+    if (!nd.disabled && nd.ips.length && !nd.reachableByDomain && nd.serves.some(i => inboundsWithDomainHost.has(i)))
+      issues.push({ severity: 'info', type: 'NODE_NOT_IN_DNS', node: nd.uuid, nodeName: nd.name, message: `Node "${nd.name}" (${nd.ips.join('/')}) isn't referenced by any host domain. Expected for bridge/relay backends — verify if it should be in a balancer domain.` });
+  }
+  for (const [ip, us] of ipToNodes) {
+    const uniq = [...new Set(us)];
+    if (uniq.length > 1) {
+      const names = uniq.map(u => (nodeByUuid.get(u) || {}).name).filter(Boolean);
+      issues.push({ severity: 'warn', type: 'DUP_NODE_IP', node: uniq[0], nodeName: names[0] || null, message: `IP ${ip} is shared by ${uniq.length} nodes: ${names.join(', ')}.` });
+    }
+  }
+  const domainInbounds = {};
+  const domainRemarks = {};
+  for (const h of hosts) for (const a of h.addresses) if (a.kind === 'domain') {
+    (domainInbounds[a.domain] = domainInbounds[a.domain] || new Set());
+    if (h.inboundUuid) domainInbounds[a.domain].add(h.inboundUuid);
+    (domainRemarks[a.domain] = domainRemarks[a.domain] || []).push(h.remark);
+  }
+  for (const dom of Object.keys(domainInbounds)) {
+    if (domainInbounds[dom].size > 1) {
+      const tags = [...domainInbounds[dom]].map(u => (inboundMeta[u] && inboundMeta[u].tag) || String(u).slice(0, 8));
+      issues.push({ severity: 'info', type: 'DUP_DOMAIN', domain: dom, hosts: [...new Set(domainRemarks[dom])], message: `Domain ${dom} is used across ${domainInbounds[dom].size} different inbounds (${tags.join(', ')}). Verify this is intentional.` });
+    }
+  }
+  for (const h of hosts) {
+    if (h.addresses.length < 2) continue;
+    let healthy = 0; const bad = [];
+    for (const a of h.addresses) { if (a.ips.some(x => x.nodeUuid)) healthy++; else bad.push(a.domain || a.raw); }
+    if (healthy > 0 && bad.length > 0)
+      issues.push({ severity: 'warn', type: 'PARTIAL_BALANCER', host: h.uuid, hostRemark: h.remark, hosts: [h.remark], message: `Balancer host "${h.remark}" has ${bad.length} of ${h.addresses.length} members not pointing at a live node: ${bad.join(', ')}.` });
+  }
+  for (const nd of nodes) {
+    if (!nd.trackingActive || !nd.limitBytes || nd.usedBytes == null) continue;
+    if (nd.usedBytes >= nd.limitBytes) {
+      issues.push({ severity: 'error', type: 'TRAFFIC_EXCEEDED', node: nd.uuid, nodeName: nd.name, message: `Node "${nd.name}" exceeded its traffic limit (${nd.usedBytes} / ${nd.limitBytes} bytes).` });
+    } else {
+      const pct = nd.notifyPercent || 80;
+      if (nd.usedBytes >= nd.limitBytes * pct / 100)
+        issues.push({ severity: 'warn', type: 'TRAFFIC_NEAR_LIMIT', node: nd.uuid, nodeName: nd.name, message: `Node "${nd.name}" is at ${Math.round(nd.usedBytes / nd.limitBytes * 100)}% of its traffic limit (notify ≥${pct}%).` });
+    }
+  }
+  const inbounds = Object.values(inboundMeta).map(m => {
+    const serving = nodes.filter(n => n.serves.includes(m.uuid));
+    let up = 0, down = 0;
+    for (const n of serving) { const t = n.inboundTraffic[m.tag]; if (t) { up += t.up; down += t.down; } }
+    return { ...m, hostCount: hosts.filter(h => h.inboundUuid === m.uuid).length, nodeCount: serving.length, up, down };
+  }).filter(m => m.hostCount > 0 || m.nodeCount > 0);
+  const stats = {
+    nodesTotal: nodes.length, nodesUp: nodes.filter(n => n.connected).length,
+    nodesDown: nodes.filter(n => !n.connected && !n.disabled).length,
+    nodesDisabled: nodes.filter(n => n.disabled).length,
+    usersOnline: nodes.reduce((s, n) => s + (n.usersOnline || 0), 0),
+    totalUp: nodes.reduce((s, n) => s + (n.up || 0), 0),
+    totalDown: nodes.reduce((s, n) => s + (n.down || 0), 0),
+    totalUsedBytes: nodes.reduce((s, n) => s + (n.usedBytes || 0), 0),
+    hostsTotal: hosts.length, domainsTotal: toResolve.size, inboundsTotal: inbounds.length,
+    issues: {
+      error: issues.filter(i => i.severity === 'error').length,
+      warn: issues.filter(i => i.severity === 'warn').length,
+      info: issues.filter(i => i.severity === 'info').length,
+    },
+  };
+  let panelUsersOnline = null;
+  try { panelUsersOnline = statsR && statsR.ok && statsR.body.response && (statsR.body.response.onlineStats ? statsR.body.response.onlineStats.onlineNow : undefined); } catch {}
+  return { panel: base, scannedAt: new Date().toISOString(), stats, panelUsersOnline, inbounds, nodes, hosts, issues };
+}
+/* ===== End browser scan engine ===== */
+</script>
+<script>
+const $=s=>document.querySelector(s);
+const els={panelUrl:$('#panelUrl'),token:$('#token'),scanBtn:$('#scanBtn'),autoTgl:$('#autoTgl'),interval:$('#interval'),
+  remember:$('#rememberTgl'),meta:$('#meta'),stats:$('#stats'),toolbar:$('#toolbar'),views:$('#views'),
+  fInbound:$('#fInbound'),fIssues:$('#fIssues'),search:$('#search'),fitBtn:$('#fitBtn'),expandBtn:$('#expandBtn'),collapseBtn:$('#collapseBtn'),fOverlay:$('#fOverlay'),fUniform:$('#fUniform'),exportBtn:$('#exportBtn'),
+  err:$('#errBanner'),tooltip:$('#tooltip'),viewport:$('#viewport'),
+  panelIssues:$('#panelIssues'),panelDetails:$('#panelDetails'),issueCount:$('#issueCount'),modalBg:$('#modalBg'),modalX:$('#modalX'),modalBody:$('#modalBody')};
+let DATA=null,MODEL=null,autoTimer=null,viewMode='tree',selectedId=null,treeExpandAll=false;
+let filters={inbound:'all',issuesOnly:false,search:'',overlay:false,uniform:true};
+// Entity / status colors aligned to the Remnawave palette (cyan primary, GitHub-dark surfaces).
+const COLORS={inbound:'#a78bfa',host:'#22d3ee',domain:'#06b6d4',dead:'#ff6b81',foreign:'#f0883e',up:'#22d3ee',down:'#ff6b81',dis:'#6e7681'};
+const VIEWS=[['tree','Tree'],['tiers','Tiers'],['sankey','Sankey'],['matrix','Matrix'],['countries','Countries'],['force','Force']];
+
+/* ---- Entity icon set: small monochrome inline SVG glyphs (currentColor), no font/CDN. ----
+   One tasteful glyph per entity type so each reads at a glance and is tinted by its type color. */
+const ICONS={
+  inbound:'<path d="M2.5 8h6.5M6 4.5 9.5 8 6 11.5"/><path d="M11.5 2.5h1a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1h-1"/>',          // arrow entering a gateway
+  host:'<rect x="2" y="2.5" width="12" height="4" rx="1"/><rect x="2" y="9.5" width="12" height="4" rx="1"/><circle cx="4.5" cy="4.5" r=".6" fill="currentColor" stroke="none"/><circle cx="4.5" cy="11.5" r=".6" fill="currentColor" stroke="none"/>', // stacked server/host
+  node:'<rect x="3" y="3" width="10" height="10" rx="2"/><rect x="6" y="6" width="4" height="4" rx="1"/><path d="M6.5 3V1.5M9.5 3V1.5M6.5 14.5V13M9.5 14.5V13M3 6.5H1.5M3 9.5H1.5M14.5 6.5H13M14.5 9.5H13"/>', // CPU/node chip
+  domain:'<circle cx="8" cy="8" r="6"/><path d="M2 8h12M8 2c2 2.4 2 9.6 0 12M8 2c-2 2.4-2 9.6 0 12"/>',          // globe
+  ip:'<rect x="2" y="4.5" width="12" height="7" rx="1.2"/><path d="M5 8h.01M7.5 8h.01M10 8h.01M12.2 8h.01"/>',        // address/IP plate
+  foreign:'<path d="M8 1.6 14.4 13H1.6L8 1.6Z"/><path d="M8 6.4v3M8 11.2h.01"/>',                                     // warning triangle (foreign IP)
+  up:'<circle cx="8" cy="8" r="6"/><path d="M5.5 8.2 7.2 10 10.5 6"/>',                                               // node up (check)
+  down:'<circle cx="8" cy="8" r="6"/><path d="M6 6l4 4M10 6l-4 4"/>',                                                  // node down (cross)
+  error:'<circle cx="8" cy="8" r="6"/><path d="M8 5v3.4M8 10.8h.01"/>',
+  warn:'<path d="M8 1.6 14.4 13H1.6L8 1.6Z"/><path d="M8 6.4v3M8 11.2h.01"/>',
+  info:'<circle cx="8" cy="8" r="6"/><path d="M8 7.2v3.4M8 5.2h.01"/>'
+};
+// Wrap a glyph in a sized, colored <span class="ic"> for inline use in HTML strings.
+function icon(type,color){const g=ICONS[type];if(!g)return '';
+  return `<span class="ic" style="display:inline-flex;color:${color||'currentColor'}"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${g}</svg></span>`;}
+// Pick the right entity icon + color for a model entity type.
+function entIcon(type,opts){opts=opts||{};
+  if(type==='node')return icon(opts.down?'down':'node',opts.color||(opts.down?COLORS.down:COLORS.up));
+  if(type==='domain')return icon('domain',opts.color||(opts.dead?COLORS.dead:opts.foreign?COLORS.foreign:COLORS.domain));
+  if(type==='host')return icon('host',COLORS.host);
+  if(type==='inbound')return icon('inbound',COLORS.inbound);
+  if(type==='foreign')return icon('foreign',COLORS.foreign);
+  if(type==='ip')return icon('ip',opts.color||COLORS.domain);
+  return icon(type,opts.color);
+}
+// Choose an entity glyph for an issue row from its type string / entity fields.
+function issueIcon(i){const t=String(i.type||'').toUpperCase();
+  if(t.includes('FOREIGN')||t.includes('STALE_IP'))return entIcon('foreign');
+  if(t.includes('NODE')||t.includes('DOWN'))return entIcon('node',{down:true});
+  if(t.includes('DEAD')||t.includes('DNS')||t.includes('DOMAIN'))return entIcon('domain',{dead:true});
+  if(t.includes('HOST'))return entIcon('host');
+  if(t.includes('INBOUND'))return entIcon('inbound');
+  if(i.domain)return entIcon('domain');
+  if(i.nodeName||i.node)return entIcon('node');
+  if(i.hostRemark||i.hosts)return entIcon('host');
+  return '';
+}
+
+try{const s=JSON.parse(localStorage.getItem('vtm')||'{}');
+  if(s.panelUrl)els.panelUrl.value=s.panelUrl; if(s.token)els.token.value=s.token;
+  if(typeof s.auto==='boolean')els.autoTgl.checked=s.auto; if(s.interval)els.interval.value=s.interval;
+  if(typeof s.remember==='boolean')els.remember.checked=s.remember; if(s.view)viewMode=s.view;}catch(e){}
+function saveCreds(){ if(!els.remember.checked){localStorage.removeItem('vtm');return;}
+  localStorage.setItem('vtm',JSON.stringify({panelUrl:els.panelUrl.value.trim(),token:els.token.value.trim(),
+    auto:els.autoTgl.checked,interval:els.interval.value,remember:true,view:viewMode}));}
+const fmt=n=>n==null?'—':n.toLocaleString('en-US');
+const fmtBytes=n=>{n=Number(n)||0;if(n<1024)return Math.round(n)+' B';const u=['KB','MB','GB','TB','PB'];let i=-1;do{n/=1024;i++;}while(n>=1024&&i<u.length-1);return (n<10?n.toFixed(2):n.toFixed(1))+' '+u[i];};
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const short=d=>{const s=String(d);return /^(\d{1,3}\.){3}\d{1,3}$/.test(s)?s:s.split('.')[0];};
+const flag=c=>{if(!c||c.length!==2)return '';try{return String.fromCodePoint(...[...c.toUpperCase()].map(ch=>127397+ch.charCodeAt(0)));}catch(e){return '';}};
+const nodeLabel=n=>(n&&n.country?flag(n.country)+' ':'')+((n&&n.name)||'');
+
+els.views.innerHTML=VIEWS.map(([k,l])=>`<button data-v="${k}" class="${k===viewMode?'on':''}">${l}</button>`).join('');
+els.views.querySelectorAll('button').forEach(b=>b.onclick=()=>{viewMode=b.dataset.v;
+  els.views.querySelectorAll('button').forEach(x=>x.classList.toggle('on',x.dataset.v===viewMode));saveCreds();syncTreeControls();renderView();});
+els.fInbound.onchange=()=>{filters.inbound=els.fInbound.value;renderView();};
+els.fIssues.onchange=()=>{filters.issuesOnly=els.fIssues.checked;renderView();};
+els.fOverlay.onchange=()=>{filters.overlay=els.fOverlay.checked;if(DATA){MODEL=buildModel();renderIssues();renderView();}};
+els.fUniform.onchange=()=>{filters.uniform=els.fUniform.checked;renderView();};
+els.fUniform.checked=true;filters.uniform=true;   // always start ON (ignore any browser-restored checkbox state)
+els.exportBtn.onclick=()=>exportData();
+let searchT;els.search.oninput=()=>{filters.search=els.search.value.trim().toLowerCase();clearTimeout(searchT);searchT=setTimeout(renderView,250);};
+els.fitBtn.onclick=()=>renderView();
+els.expandBtn.onclick=()=>{treeExpandAll=true;renderView();};
+els.collapseBtn.onclick=()=>{treeExpandAll=false;renderView();};
+document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>switchTab(t.dataset.tab));
+els.modalX.onclick=()=>els.modalBg.classList.remove('show');
+els.modalBg.onclick=(e)=>{if(e.target===els.modalBg)els.modalBg.classList.remove('show');};
+document.addEventListener('keydown',e=>{if(e.key==='Escape')els.modalBg.classList.remove('show');});
+function switchTab(n){document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.tab===n));
+  els.panelIssues.style.display=n==='issues'?'block':'none';els.panelDetails.style.display=n==='details'?'block':'none';
+  if(typeof window.revealSide==='function')window.revealSide();}
+// Expand all / Collapse only make sense for the collapsible Tree view — hide them in every other view.
+function syncTreeControls(){const t=(viewMode==='tree');els.expandBtn.style.display=t?'':'none';els.collapseBtn.style.display=t?'':'none';}
+
+async function doScan(){
+  const panelUrl=els.panelUrl.value.trim(),token=els.token.value.trim();
+  if(!panelUrl||!token){showErr('Enter panel URL and API token.');return;}
+  els.scanBtn.disabled=true;els.scanBtn.innerHTML='<span class="spinner"></span> Scanning';hideErr();saveCreds();
+  try{
+    const j=await scan(panelUrl,token);
+    DATA=j;MODEL=buildModel();populateInbounds();renderStats();renderIssues();renderView();
+    els.toolbar.style.display='flex';syncTreeControls();els.meta.innerHTML=`<b style="color:#e7ecf5">${esc(j.panel.replace(/^https?:\/\//,''))}</b><br>scanned ${new Date().toLocaleTimeString()}`;
+  }catch(e){
+    let msg=e.message;
+    if(e instanceof TypeError) msg='Network error — CORS is likely not enabled on your panel. Add Access-Control-Allow-Origin: https://legiz-ru.github.io to your reverse proxy. See the CORS setup instructions in the README.';
+    showErr('Scan failed: '+msg);
+  }finally{els.scanBtn.disabled=false;els.scanBtn.textContent='Scan';}
+}
+function showErr(m){els.err.textContent=m;els.err.style.display='block';} function hideErr(){els.err.style.display='none';}
+
+function buildModel(){
+  const nodeByUuid=new Map(DATA.nodes.map(n=>[n.uuid,n]));
+  const inboundByUuid=new Map(DATA.inbounds.map(i=>[i.uuid,i]));
+  const dmap=new Map();
+  DATA.hosts.forEach(h=>h.addresses.forEach(a=>{
+    let key,kind;
+    if(a.kind==='domain'){key=a.domain;kind='domain';}
+    else{const xx=a.ips[0];if(!xx)return;key=xx.ip;kind='ip';}
+    let e=dmap.get(key);
+    if(!e){e={domain:key,kind,hosts:[],inboundUuids:new Set(),inboundTags:new Set(),matched:new Set(),foreign:new Set(),serving:new Set(),dead:false,users:0};dmap.set(key,e);}
+    e.hosts.push(h.remark); if(h.inboundUuid){e.inboundUuids.add(h.inboundUuid);e.inboundTags.add(h.inboundTag);}
+    if(a.kind==='domain'&&a.ips.length===0)e.dead=true;
+    a.ips.forEach(x=>{x.nodeUuid?e.matched.add(x.nodeUuid):e.foreign.add(x.ip);});
+    (h.servingNodeUuids||[]).forEach(u=>e.serving.add(u));
+  }));
+  if(filters.overlay){dmap.forEach(e=>{e.serving.forEach(u=>e.matched.add(u));e.foreign=new Set();});}
+  dmap.forEach(e=>{e.users=[...e.matched].reduce((s,u)=>s+((nodeByUuid.get(u)||{}).usersOnline||0),0);});
+  return {nodeByUuid,inboundByUuid,domains:[...dmap.values()].sort((a,b)=>a.domain.localeCompare(b.domain))};
+}
+function populateInbounds(){
+  const opts=['<option value="all">All inbounds</option>'].concat(
+    DATA.inbounds.slice().sort((a,b)=>(a.tag||'').localeCompare(b.tag||'')).map(i=>`<option value="${i.uuid}">${esc(i.tag||i.uuid.slice(0,8))}</option>`));
+  els.fInbound.innerHTML=opts.join(''); els.fInbound.value=filters.inbound;
+}
+function domStatus(d){return d.dead?'dead':(d.foreign.size?'foreign':'ok');}
+function nodeDown(n){return !!(n&&!n.connected&&!n.disabled);}
+// Unified status descriptor for any diagram entity → {key,label,color,dim}.
+// Reuses nodeDown/domStatus and COLORS so every SVG view speaks one status language.
+function entStatus(type,meta){
+  if(type==='node'){
+    if(meta&&meta.disabled)return {key:'disabled',label:'disabled',color:COLORS.dis,dim:true};
+    if(nodeDown(meta))return {key:'down',label:'down',color:COLORS.down};
+    return {key:'up',label:'online',color:COLORS.up};
+  }
+  if(type==='host'){
+    if(meta&&meta.disabled)return {key:'disabled',label:'disabled',color:COLORS.dis,dim:true};
+    return {key:'active',label:'enabled',color:COLORS.host};
+  }
+  if(type==='domain'){const s=domStatus(meta);
+    if(s==='dead')return {key:'dead',label:'dead DNS',color:COLORS.dead};
+    if(s==='foreign')return {key:'foreign',label:'foreign IPs',color:COLORS.foreign};
+    return {key:'ok',label:'ok',color:COLORS.domain};
+  }
+  if(type==='foreign')return {key:'foreign',label:'unregistered IP',color:COLORS.foreign};
+  if(type==='inbound')return {key:'active',label:'inbound',color:COLORS.inbound};
+  return {key:'',label:type||'',color:'#9fb0c8'};
+}
+function domainHasIssue(d){return d.dead||d.foreign.size>0||[...d.matched].some(u=>nodeDown(MODEL.nodeByUuid.get(u)));}
+function matchSearch(txt){return !filters.search||String(txt).toLowerCase().includes(filters.search);}
+function domainPasses(d){
+  if(filters.inbound!=='all'&&!d.inboundUuids.has(filters.inbound))return false;
+  if(filters.issuesOnly&&!domainHasIssue(d))return false;
+  if(filters.search){const hay=d.domain+' '+[...d.inboundTags].join(' ')+' '+d.hosts.join(' ');
+    const nodeNames=[...d.matched].map(u=>(MODEL.nodeByUuid.get(u)||{}).name||'').join(' ');
+    if(!matchSearch(hay+' '+nodeNames+' '+[...d.foreign].join(' ')))return false;}
+  return true;
+}
+function filteredDomains(){return MODEL.domains.filter(domainPasses);}
+
+function renderStats(){
+  const s=DATA.stats,distinct=DATA.panelUsersOnline!=null?DATA.panelUsersOnline:s.usersOnline;
+  els.stats.style.display='flex';
+  els.stats.innerHTML=`
+   <div class="stat"><div class="v" style="color:var(--up)">${fmt(distinct)}</div><div class="l">Users online</div></div>
+   <div class="stat"><div class="v">${fmt(s.usersOnline)}</div><div class="l">Node sessions</div></div>
+   <div class="stat"><div class="v">${fmt(s.nodesUp)}<small>/${fmt(s.nodesTotal)}</small></div><div class="l">Nodes up</div></div>
+   <div class="stat"><div class="v" style="color:${s.nodesDown?'var(--down)':'var(--txt)'}">${fmt(s.nodesDown)}</div><div class="l">Down</div></div>
+   <div class="stat"><div class="v" style="color:var(--disabled)">${fmt(s.nodesDisabled)}</div><div class="l">Disabled</div></div>
+   <div class="stat"><div class="v">${fmt(s.hostsTotal)}</div><div class="l">Hosts</div></div>
+   <div class="stat"><div class="v">${fmt(s.domainsTotal)}</div><div class="l">Domains</div></div>
+   <div class="stat"><div class="v" style="font-size:13px;line-height:1.35">↑ ${fmtBytes(s.totalUp)}<br>↓ ${fmtBytes(s.totalDown)}</div><div class="l">Live traffic</div></div>
+   <div class="stat"><div class="v">${fmtBytes(s.totalUsedBytes)}</div><div class="l">Used (cycle)</div></div>
+   <div class="stat"><div class="v" style="font-size:13px;padding-top:3px"><span class="chip e">${s.issues.error}</span><span class="chip w">${s.issues.warn}</span><span class="chip i">${s.issues.info}</span></div><div class="l">Issues</div></div>`;
+}
+function renderIssues(){
+  const all=currentIssues(),counts={error:0,warn:0,info:0};all.forEach(i=>counts[i.severity]++);
+  els.issueCount.textContent=all.length?`(${all.length})`:'';
+  const stc=document.getElementById('sideToggleCount');if(stc)stc.textContent=all.length?`(${all.length})`:'';
+  if(!window._if)window._if={error:true,warn:true,info:true};
+  const list=all.filter(i=>window._if[i.severity]);
+  els.panelIssues.innerHTML=`<div class="filterrow">${['error','warn','info'].map(sv=>`<button data-sv="${sv}" class="${window._if[sv]?'on':''}">${sv} ${counts[sv]}</button>`).join('')}</div>`+
+    (list.length?list.map((i,ix)=>`<div class="issue ${i.severity==='error'?'e':i.severity==='warn'?'w':'i'}" data-ix="${ix}">
+      <div class="t"><span class="sev-dot" style="background:${i.severity==='error'?'var(--err)':i.severity==='warn'?'var(--warn)':'var(--info)'}"></span>${issueIcon(i)}${i.type}</div>
+      <div class="m">${esc(i.message)}</div></div>`).join(''):'<div class="empty">No issues at this severity.</div>');
+  els.panelIssues.querySelectorAll('.filterrow button').forEach(b=>b.onclick=()=>{window._if[b.dataset.sv]=!window._if[b.dataset.sv];renderIssues();});
+  els.panelIssues.querySelectorAll('.issue').forEach(d=>d.onclick=()=>focusIssue(list[+d.dataset.ix]));
+}
+function focusIssue(it){ if(it.domain){filters.search=it.domain.toLowerCase();els.search.value=it.domain;renderView();}
+  else if(it.nodeName){filters.search=it.nodeName.toLowerCase();els.search.value=it.nodeName;renderView();}
+  else if(it.hostRemark){filters.search=String(it.hostRemark).toLowerCase();els.search.value=it.hostRemark;renderView();} }
+function currentIssues(){let a=(DATA&&DATA.issues)||[];if(filters.overlay)a=a.filter(i=>i.type!=='FOREIGN_IP'&&i.type!=='STALE_IP_HOST');return a;}
+function dl(name,type,content){const b=new Blob([content],{type});const u=URL.createObjectURL(b);const a=document.createElement('a');a.href=u;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),3000);}
+function exportData(){if(!DATA)return;const iss=currentIssues();
+  const cols=['severity','type','domain','node','hosts','message'];
+  const cell=v=>{v=(v==null?'':String(v));return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;};
+  const csv=[cols.join(',')].concat(iss.map(i=>[i.severity,i.type,i.domain||'',i.nodeName||i.node||'',(i.hosts||[]).join('; '),i.message].map(cell).join(','))).join('\n');
+  const stamp=new Date().toISOString().replace(/[:.]/g,'-').slice(0,19);
+  const host=(DATA.panel||'panel').replace(/^https?:\/\//,'').replace(/[^a-z0-9.-]/gi,'');
+  dl('vpn-issues_'+host+'_'+stamp+'.csv','text/csv;charset=utf-8','﻿'+csv);
+  setTimeout(()=>dl('vpn-topology_'+host+'_'+stamp+'.json','application/json',JSON.stringify({panel:DATA.panel,scannedAt:DATA.scannedAt,overlayMode:filters.overlay,stats:DATA.stats,panelUsersOnline:DATA.panelUsersOnline,inbounds:DATA.inbounds,hosts:DATA.hosts,nodes:DATA.nodes,issues:DATA.issues},null,2)),350);
+}
+</script>
+<script>
+function clearVP(){els.viewport.querySelectorAll('svg,.mx-wrap,.legend,.hint,.empty').forEach(e=>e.remove());return els.viewport;}
+function vpSize(){return [els.viewport.clientWidth,els.viewport.clientHeight];}
+let curZoom=null,curSvg=null;
+function makeSvg(vp,w,h){
+  const svg=d3.select(vp).append('svg').attr('class','vp-svg').attr('viewBox',[0,0,w,h]);
+  const g=svg.append('g'); curZoom=d3.zoom().scaleExtent([0.12,4]).on('zoom',e=>g.attr('transform',e.transform));
+  svg.call(curZoom);curSvg=svg; svg.on('click',()=>selectNode(null)); return {svg,g};
+}
+function defsGlow(svg){const f=svg.append('defs').append('filter').attr('id','gl').attr('x','-60%').attr('y','-60%').attr('width','220%').attr('height','220%');
+  f.append('feGaussianBlur').attr('stdDeviation','3').attr('result','b');const m=f.append('feMerge');m.append('feMergeNode').attr('in','b');m.append('feMergeNode').attr('in','SourceGraphic');}
+function nodeColor(n){return n.disabled?COLORS.dis:n.connected?COLORS.up:COLORS.down;}
+// Compact status sub-legend appended to every SVG view's legend so the color/dim
+// encoding (active / down / disabled-dimmed) is explained. Color dots, no glyph.
+const STATUS_LEGEND=[[COLORS.up,'status: active'],[COLORS.down,'down'],[COLORS.dis,'disabled (dimmed)']];
+function legend(items){const l=document.createElement('div');l.className='legend';
+  // items: [color, label, iconType?] — render the entity glyph when an icon type is given, else a color dot.
+  l.innerHTML=items.map(([c,t,ic])=>`<div>${ic?icon(ic,c):`<i style="background:${c}"></i>`}${t}</div>`).join('');els.viewport.appendChild(l);}
+function hint(t){const h=document.createElement('div');h.className='hint';h.textContent=t;els.viewport.appendChild(h);}
+// Append a centered, type-colored inline-SVG glyph (reusing ICONS bodies) onto a D3 node <g>.
+// `key` selects the ICONS glyph, `color` tints it (glyph uses currentColor). `sz`=box size (px).
+// pointer-events:none keeps the group's click/hover/drag handlers firing through the glyph.
+function glyphOn(sel,key,color,sz,dx,dy){sz=sz||16;dx=dx||0;dy=dy||0;
+  sel.each(function(d){const k=typeof key==='function'?key(d):key;if(!k||!ICONS[k])return;
+    const c=typeof color==='function'?color(d):color;const s=typeof sz==='function'?sz(d):sz;
+    const dv=typeof dx==='function'?dx(d):dx,ev=typeof dy==='function'?dy(d):dy;
+    d3.select(this).append('svg').attr('class','node-glyph').attr('viewBox','0 0 16 16')
+      .attr('width',s).attr('height',s).attr('x',-s/2+dv).attr('y',-s/2+ev)
+      .style('color',c).attr('fill','none').attr('stroke','currentColor').attr('stroke-width',1.4)
+      .attr('stroke-linecap','round').attr('stroke-linejoin','round').attr('pointer-events','none')
+      .html(ICONS[k]);});}
+
+function renderView(){
+  if(!DATA){return;} clearVP();
+  if(viewMode==='matrix')return renderMatrix();
+  if(viewMode==='tree')return renderTree();
+  if(viewMode==='tiers')return renderTiers();
+  if(viewMode==='sankey')return renderSankey();
+  if(viewMode==='countries')return renderCountries();
+  return renderForce();
+}
+
+/* ---------------- TREE (collapsible) ---------------- */
+function treeData(){
+  const inbs=DATA.inbounds.filter(ib=>filters.inbound==='all'||ib.uuid===filters.inbound);
+  const root={name:DATA.panel.replace(/^https?:\/\//,''),type:'root',children:[]};
+  inbs.forEach(ib=>{
+    const hostsOn=DATA.hosts.filter(h=>h.inboundUuid===ib.uuid);
+    const ibNode={name:ib.tag||ib.uuid.slice(0,8),type:'inbound',meta:ib,children:[]};
+    hostsOn.forEach(h=>{
+      const hostNode={name:h.remark||'(host)',type:'host',meta:h,children:[]};
+      h.addresses.forEach(a=>{
+        if(a.kind==='domain'){
+          const hasDown=a.ips.some(x=>x.nodeUuid&&nodeDown(MODEL.nodeByUuid.get(x.nodeUuid)));
+          if(filters.issuesOnly&&!(a.ips.length===0||a.ips.some(x=>!x.nodeUuid)||hasDown))return;
+          if(filters.search&&!matchSearch(a.domain+' '+h.remark))return;
+          const dn={name:short(a.domain),full:a.domain,type:'domain',dead:a.ips.length===0,foreign:a.ips.some(x=>!x.nodeUuid),children:[]};
+          a.ips.forEach(x=>{ if(x.nodeUuid){const n=MODEL.nodeByUuid.get(x.nodeUuid);if(n)dn.children.push({name:nodeLabel(n),type:'node',meta:n});}
+            else dn.children.push({name:x.ip,type:'foreign'});});
+          hostNode.children.push(dn);
+        } else { const x=a.ips[0]; if(!x)return;
+          if(filters.search&&!matchSearch(a.raw+' '+h.remark))return;
+          if(x.nodeUuid){const n=MODEL.nodeByUuid.get(x.nodeUuid);if(n)hostNode.children.push({name:nodeLabel(n),type:'node',meta:n});}
+          else hostNode.children.push({name:x.ip,type:'foreign'}); }
+      });
+      if(hostNode.children.length||!filters.issuesOnly&&!filters.search)ibNode.children.push(hostNode);
+    });
+    if(ibNode.children.length)root.children.push(ibNode);
+  });
+  return root;
+}
+function renderTree(){
+  const vp=clearVP(),[W,H]=vpSize();
+  const {svg,g}=makeSvg(vp,W,H);
+  const root=d3.hierarchy(treeData());
+  const anyFilter=filters.inbound!=='all'||filters.issuesOnly||!!filters.search;
+  if(!treeExpandAll&&!anyFilter){root.descendants().forEach(d=>{ if(d.depth>=1&&d.children){d._children=d.children;d.children=null;} });}
+  const tree=d3.tree().nodeSize([20,210]);
+  const dur=350;
+  function rOf(d){if(filters.uniform)return d.data.type==='root'?8:7;return d.data.type==='inbound'?7:d.data.type==='node'?5+Math.sqrt((d.data.meta&&d.data.meta.usersOnline)||0)*0.25:d.data.type==='root'?8:5;}
+  // Status descriptor for a tree datum. The tree stores domain dead/foreign as flags
+  // (not a domain model), so build the shape domStatus() expects.
+  function treeStatus(d){const t=d.data.type;
+    if(t==='domain')return entStatus('domain',{dead:d.data.dead,foreign:new Set(d.data.foreign?['x']:[])});
+    return entStatus(t,d.data.meta);}
+  function colOf(d){const t=d.data.type;if(t==='root')return '#9fb0c8';return treeStatus(d).color;}
+  function dimOf(d){return d.data.type==='root'?1:(treeStatus(d).dim?0.45:1);}
+  // Map a tree datum to its entity glyph (root → none; down node → 'down'), mirroring entIcon().
+  function treeGlyphKey(d){const t=d.data.type;if(t==='root')return null;
+    if(t==='node')return nodeDown(d.data.meta)?'down':'node';return t;}
+  function update(src){
+    tree(root); const nodes=root.descendants(),links=root.links();
+    g.selectAll('path.lnk').data(links,d=>d.target.data.__id||(d.target.data.__id=++uid)).join(
+      en=>en.append('path').attr('class','lnk').attr('fill','none').attr('stroke','rgba(140,160,200,.22)').attr('stroke-width',1)
+        .attr('d',d3.linkHorizontal().x(d=>src.y0).y(d=>src.x0)),
+      up=>up,ex=>ex.transition().duration(dur).attr('d',d3.linkHorizontal().x(d=>src.y).y(d=>src.x)).remove())
+      .transition().duration(dur).attr('d',d3.linkHorizontal().x(d=>d.y).y(d=>d.x));
+    const gn=g.selectAll('g.tn').data(nodes,d=>d.data.__id||(d.data.__id=++uid));
+    const en=gn.enter().append('g').attr('class','tn').attr('transform',`translate(${src.y0},${src.x0})`).style('cursor','pointer')
+      .attr('opacity',dimOf)
+      .on('click',(e,d)=>{e.stopPropagation(); if(d._children||d.children){d.children=d.children?null:d._children;d._children=d.children?null:d._children;update(d);} openDetailFromTree(d);})
+      .on('mouseover',(e,d)=>tipTree(e,d)).on('mousemove',moveTip).on('mouseout',hideTip);
+    en.append('circle').attr('r',rOf).attr('fill',d=>(filters.uniform&&treeGlyphKey(d))?'transparent':colOf(d)).attr('stroke',d=>d._children?'#fff':((filters.uniform&&treeGlyphKey(d))?'none':'rgba(255,255,255,.5)')).attr('stroke-width',d=>d._children?1.8:.8)
+      .attr('class',d=>d.data.type==='domain'&&(d.data.dead||d.data.foreign)?'pulse-s':null);
+    // Type glyph on each node (root stays a plain dot); scale with radius, skip on very large trees.
+    if(nodes.length<=140||filters.uniform)glyphOn(en,d=>treeGlyphKey(d),colOf,d=>Math.max(13,rOf(d)*2.4));
+    en.append('text').attr('dy',3).attr('x',d=>rOf(d)+5).attr('font-size',d=>d.data.type==='inbound'?12:10.5)
+      .attr('fill',d=>d.data.type==='inbound'?'#cdbcff':'rgba(231,236,245,.85)')
+      .attr('paint-order','stroke').attr('stroke','rgba(7,10,20,.85)').attr('stroke-width',2.4)
+      .text(d=>d.data.name+((d._children)?` (${(d._children||[]).length})`:''));
+    en.merge(gn).transition().duration(dur).attr('transform',d=>`translate(${d.y},${d.x})`);
+    en.merge(gn).select('text').text(d=>d.data.name+((d._children)?` ▸${(d._children||[]).length}`:''));
+    gn.exit().transition().duration(dur).attr('transform',`translate(${src.y},${src.x})`).remove();
+    nodes.forEach(d=>{d.x0=d.x;d.y0=d.y;});
+  }
+  let uid=0; root.x0=H/2;root.y0=0; update(root);
+  setTimeout(()=>fitTo(g,svg,W,H),420);
+  legend([[COLORS.inbound,'inbound','inbound'],[COLORS.host,'host','host'],[COLORS.domain,'domain','domain'],[COLORS.up,'node up','up'],[COLORS.down,'down','down'],[COLORS.foreign,'foreign/dead','foreign'],...STATUS_LEGEND]);
+  hint('click a node to expand · drag to pan · scroll to zoom');
+}
+function openDetailFromTree(d){const t=d.data.type;
+  if(t==='node'&&d.data.meta)showNodeDetail(d.data.meta);
+  else if(t==='domain')showDomainDetailByName(d.data.full);
+  else if(t==='host'&&d.data.meta)showHostDetail(d.data.meta);
+  else if(t==='inbound'&&d.data.meta)showInboundDetail(d.data.meta);}
+function tipTree(e,d){const t=d.data.type;
+  const tic=t==='node'?entIcon('node',{down:nodeDown(d.data.meta)}):t==='domain'?entIcon('domain',{dead:d.data.dead,foreign:d.data.foreign}):entIcon(t);
+  const st=t==='root'?null:(t==='domain'?entStatus('domain',{dead:d.data.dead,foreign:new Set(d.data.foreign?['x']:[])}):entStatus(t,d.data.meta));
+  let h=`<b>${tic}${esc(d.data.full||d.data.name)}</b> <span class="s">${t}${st&&st.label?' · '+st.label:''}</span>`;
+  if(t==='node'&&d.data.meta){const n=d.data.meta;h+=`<br><span class="s">${(n.ips||[]).join(', ')}</span><br>${n.disabled?'disabled':n.connected?'online':'down'} · ${fmt(n.usersOnline)} users${(n.up||n.down)?` · ↑${fmtBytes(n.up)} ↓${fmtBytes(n.down)}`:''}`;}
+  if(t==='inbound'&&d.data.meta)h+=`<br><span class="s">hosts ${d.data.meta.hostCount} · nodes ${d.data.meta.nodeCount}</span>`;
+  showTipHtml(e,h);}
+
+/* ---------------- TIERS (layered columns) ---------------- */
+function renderTiers(){
+  const vp=clearVP(),[W,H]=vpSize();const {svg,g}=makeSvg(vp,W,H);defsGlow(svg);
+  const doms=filteredDomains();
+  const inbUuids=new Set(),hostSet=new Map(),nodeSet=new Map(),foreignSet=new Map();
+  doms.forEach(d=>{d.inboundUuids.forEach(u=>inbUuids.add(u));
+    d.matched.forEach(u=>nodeSet.set(u,MODEL.nodeByUuid.get(u)));
+    d.foreign.forEach(ip=>foreignSet.set(ip,true));});
+  DATA.hosts.forEach(h=>{ if(h.addresses.some(a=>{const k=a.kind==='domain'?a.domain:(a.ips[0]&&a.ips[0].ip);return k&&doms.find(d=>d.domain===k);}))hostSet.set(h.uuid,h);});
+  const cols=[
+    {key:'inb',x:W*0.10,items:DATA.inbounds.filter(i=>inbUuids.has(i.uuid)).map(i=>({id:'i:'+i.uuid,label:i.tag,color:COLORS.inbound,meta:i,type:'inbound'}))},
+    {key:'host',x:W*0.37,items:[...hostSet.values()].map(h=>({id:'h:'+h.uuid,label:h.remark,color:entStatus('host',h).color,meta:h,type:'host'}))},
+    {key:'dom',x:W*0.64,items:doms.map(d=>({id:'d:'+d.domain,label:short(d.domain),color:domStatus(d)==='dead'?COLORS.dead:domStatus(d)==='foreign'?COLORS.foreign:COLORS.domain,meta:d,type:'domain'}))},
+    {key:'node',x:W*0.90,items:[...nodeSet.values()].filter(Boolean).map(n=>({id:'n:'+n.uuid,label:nodeLabel(n),color:nodeColor(n),meta:n,type:'node',users:n.usersOnline}))
+      .concat([...foreignSet.keys()].map(ip=>({id:'f:'+ip,label:ip,color:COLORS.foreign,type:'foreign'})))},
+  ];
+  const pos={};
+  cols.forEach(c=>{const n=c.items.length,gap=Math.min(26,(H-60)/Math.max(n,1));const y0=H/2-(n-1)*gap/2;
+    c.items.forEach((it,i)=>{it.x=c.x;it.y=y0+i*gap;pos[it.id]=it;});});
+  const links=[];
+  DATA.hosts.forEach(h=>{ if(!hostSet.has(h.uuid))return; const hi=pos['h:'+h.uuid];
+    if(h.inboundUuid&&pos['i:'+h.inboundUuid])links.push([pos['i:'+h.inboundUuid],hi]);
+    h.addresses.forEach(a=>{ const k=a.kind==='domain'?a.domain:(a.ips[0]&&a.ips[0].ip); const di=k&&pos['d:'+k]; if(!di)return; links.push([hi,di]);
+      a.ips.forEach(x=>{const ni=x.nodeUuid?pos['n:'+x.nodeUuid]:pos['f:'+x.ip];if(ni)links.push([di,ni]);});});});
+  g.append('g').selectAll('path').data(links).join('path').attr('fill','none')
+    .attr('stroke',d=>d[1].type==='foreign'?'rgba(240,136,62,.4)':'rgba(120,150,200,.18)').attr('stroke-width',1)
+    .attr('d',d=>`M${d[0].x},${d[0].y}C${(d[0].x+d[1].x)/2},${d[0].y} ${(d[0].x+d[1].x)/2},${d[1].y} ${d[1].x},${d[1].y}`);
+  const all=cols.flatMap(c=>c.items);
+  const gn=g.append('g').selectAll('g').data(all).join('g').attr('transform',d=>`translate(${d.x},${d.y})`).attr('opacity',d=>entStatus(d.type,d.meta).dim?0.45:1).style('cursor','pointer')
+    .on('click',(e,d)=>{e.stopPropagation();tierDetail(d);}).on('mouseover',(e,d)=>{const st=entStatus(d.type,d.meta);showTipHtml(e,`<b>${entIcon(d.type,{down:d.type==='node'&&nodeDown(d.meta),dead:d.type==='domain'&&domStatus(d.meta)==='dead',foreign:d.type==='domain'&&domStatus(d.meta)==='foreign'})}${esc(d.meta?(d.meta.name||d.meta.remark||d.meta.tag||d.label):d.label)}</b> <span class="s">${d.type}${st.label?' · '+st.label:''}</span>${d.type==='node'?`<br><span class="s">${(d.meta.ips||[]).join(', ')} · ${fmt(d.meta.usersOnline)} users</span>`:''}`);}).on('mousemove',moveTip).on('mouseout',hideTip);
+  gn.append('circle').attr('r',d=>filters.uniform?6:(d.type==='node'?Math.max(3,4+Math.sqrt(d.users||0)*0.2):d.type==='inbound'?7:5)).attr('fill',d=>filters.uniform?'transparent':d.color)
+    .attr('stroke',filters.uniform?'none':'rgba(255,255,255,.5)').attr('stroke-width',.7).attr('filter',d=>(!filters.uniform&&d.type==='inbound')?'url(#gl)':null)
+    .attr('class',d=>d.type==='foreign'||(d.type==='domain'&&domStatus(d.meta)!=='ok')?'pulse-s':null);
+  // Type glyph centered on each tier node (color already computed in d.color); skip when crowded.
+  if(all.length<=140||filters.uniform)glyphOn(gn,d=>d.type==='node'?(nodeDown(d.meta)?'down':'node'):d.type,d=>d.color,
+    d=>filters.uniform?16:Math.max(13,(d.type==='node'?Math.max(3,4+Math.sqrt(d.users||0)*0.2):d.type==='inbound'?7:5)*2.4));
+  gn.append('text').attr('x',d=>d.col==='node'?0:8).attr('dy',3).attr('font-size',10).attr('fill','rgba(231,236,245,.8)')
+    .attr('text-anchor',d=>d.x>W*0.8?'end':'start').attr('x',d=>d.x>W*0.8?-8:8)
+    .attr('paint-order','stroke').attr('stroke','rgba(7,10,20,.8)').attr('stroke-width',2.2)
+    .text(d=>d.label&&d.label.length>22?d.label.slice(0,21)+'…':d.label);
+  cols.forEach(c=>g.append('text').attr('x',c.x).attr('y',26).attr('text-anchor','middle').attr('font-size',11).attr('fill',COLORS.inbound==c.items[0]?.color?'#cdbcff':'var(--mut)').attr('fill','#7e8aa5').text({inb:'INBOUNDS',host:'HOSTS',dom:'DOMAINS',node:'NODES / IPs'}[c.key]+` (${c.items.length})`));
+  setTimeout(()=>fitTo(g,svg,W,H),60);
+  legend([[COLORS.inbound,'inbound','inbound'],[COLORS.host,'host','host'],[COLORS.domain,'domain','domain'],[COLORS.up,'node up','up'],[COLORS.foreign,'foreign IP','foreign'],...STATUS_LEGEND]);
+  hint('columns: inbound → host → domain → node · drag/scroll to navigate');
+}
+function tierDetail(d){if(d.type==='node')showNodeDetail(d.meta);else if(d.type==='domain')showDomainDetailByName(d.meta.domain);else if(d.type==='host')showHostDetail(d.meta);else if(d.type==='inbound')showInboundDetail(d.meta);}
+
+/* ---------------- SANKEY ---------------- */
+function renderSankey(){
+  const vp=clearVP(),[W,H]=vpSize();
+  if(!d3.sankey){vp.appendChild(Object.assign(document.createElement('div'),{className:'empty',innerHTML:'Sankey library did not load (offline / CDN blocked).<br>Try another view.'}));return;}
+  const doms=filteredDomains().filter(d=>!d.dead);
+  const idx=new Map(),nodes=[],links=[];
+  const addNode=(id,name,type,meta)=>{if(!idx.has(id)){idx.set(id,nodes.length);nodes.push({id,name,type,meta});}return idx.get(id);};
+  doms.forEach(d=>{
+    const di=addNode('d:'+d.domain,short(d.domain),'domain',d);
+    d.inboundUuids.forEach(u=>{const ib=MODEL.inboundByUuid.get(u);const ii=addNode('i:'+u,ib?ib.tag:'inb','inbound',ib);
+      links.push({source:ii,target:di,value:Math.max(d.users,1)});});
+    d.matched.forEach(u=>{const n=MODEL.nodeByUuid.get(u);if(!n)return;const ni=addNode('n:'+u,nodeLabel(n),'node',n);
+      links.push({source:di,target:ni,value:Math.max(n.usersOnline,1)});});
+    d.foreign.forEach(ip=>{const fi=addNode('f:'+ip,ip,'foreign');links.push({source:di,target:fi,value:1});});
+  });
+  if(!nodes.length){vp.appendChild(Object.assign(document.createElement('div'),{className:'empty',innerHTML:'Nothing to flow with current filters.'}));return;}
+  const {svg,g}=makeSvg(vp,W,H);
+  const cInb=nodes.filter(n=>n.type==='inbound').length,cDom=nodes.filter(n=>n.type==='domain').length,cNode=nodes.filter(n=>n.type==='node'||n.type==='foreign').length;
+  const maxCol=Math.max(cInb,cDom,cNode,1);
+  const VH=Math.max(H-10,maxCol*28);
+  const sk=d3.sankey().nodeWidth(15).nodePadding(Math.max(5,Math.min(11,520/maxCol))).extent([[10,10],[W-15,VH-10]]);
+  let graph; try{graph=sk({nodes:nodes.map(d=>({...d})),links:links.map(l=>({...l}))});}catch(e){vp.appendChild(Object.assign(document.createElement('div'),{className:'empty',innerHTML:'Sankey layout error: '+e.message}));return;}
+  const col=n=>n.type==='inbound'?COLORS.inbound:n.type==='domain'?(n.meta&&n.meta.foreign.size?COLORS.foreign:COLORS.domain):n.type==='foreign'?COLORS.foreign:nodeColor(n.meta);
+  g.append('g').attr('fill','none').selectAll('path').data(graph.links).join('path').attr('d',d3.sankeyLinkHorizontal())
+    .attr('stroke',d=>d.target.type==='foreign'?'rgba(240,136,62,.35)':'rgba(120,150,200,.18)')
+    .attr('stroke-width',d=>Math.max(1,d.width)).on('mouseover',(e,d)=>showTipHtml(e,`<b>${esc(d.source.name)} → ${esc(d.target.name)}</b><br><span class="s">${fmt(d.value)} users</span>`)).on('mousemove',moveTip).on('mouseout',hideTip);
+  const gn=g.append('g').selectAll('g').data(graph.nodes).join('g').attr('opacity',d=>entStatus(d.type,d.meta).dim?0.45:1).style('cursor','pointer')
+    .on('click',(e,d)=>{e.stopPropagation();if(d.type==='node')showNodeDetail(d.meta);else if(d.type==='domain')showDomainDetailByName(d.meta.domain);else if(d.type==='inbound')showInboundDetail(d.meta);})
+    .on('mouseover',(e,d)=>{const st=entStatus(d.type,d.meta);showTipHtml(e,`<b>${entIcon(d.type,{down:d.type==='node'&&nodeDown(d.meta),foreign:d.type==='domain'&&d.meta&&d.meta.foreign&&d.meta.foreign.size>0})}${esc(d.name)}</b> <span class="s">${d.type}${st.label?' · '+st.label:''}</span>`);}).on('mousemove',moveTip).on('mouseout',hideTip);
+  gn.append('rect').attr('x',d=>d.x0).attr('y',d=>d.y0).attr('height',d=>Math.max(1,d.y1-d.y0)).attr('width',d=>d.x1-d.x0).attr('fill',col).attr('rx',2);
+  gn.append('text').attr('x',d=>d.x0<W/2?d.x1+5:d.x0-5).attr('y',d=>(d.y0+d.y1)/2).attr('dy',3).attr('text-anchor',d=>d.x0<W/2?'start':'end')
+    .attr('font-size',10.5).attr('fill','rgba(231,236,245,.82)').attr('paint-order','stroke').attr('stroke','rgba(7,10,20,.82)').attr('stroke-width',2.2)
+    .text(d=>(d.y1-d.y0)>6?d.name:'');
+  // Small type glyph beside the label (centered 16px won't fit the thin bar); subtle, only on tall-enough bars.
+  if(graph.nodes.length<=140){const SZ=12;
+    glyphOn(gn,d=>(d.y1-d.y0)<=6?null:(d.type==='node'?(nodeDown(d.meta)?'down':'node'):d.type),col,SZ,
+      d=>d.x0<W/2?d.x1+5+SZ/2:d.x0-5-SZ/2,d=>(d.y0+d.y1)/2);
+    gn.selectAll('text').attr('x',d=>d.x0<W/2?d.x1+5+SZ+3:d.x0-5-SZ-3);}
+  setTimeout(()=>fitTo(g,svg,W,H),60);
+  legend([[COLORS.inbound,'inbound','inbound'],[COLORS.domain,'domain','domain'],[COLORS.up,'node (width = users)','up'],[COLORS.foreign,'foreign IP','foreign'],...STATUS_LEGEND]);
+  hint('flow width = users online · drag/scroll to navigate');
+}
+
+/* ---------------- MATRIX (domain × node) ---------------- */
+function renderMatrix(){
+  const vp=clearVP();
+  const doms=filteredDomains();
+  const nodeUuids=[...new Set(doms.flatMap(d=>[...d.matched]))]
+    .map(u=>MODEL.nodeByUuid.get(u)).filter(Boolean)
+    .sort((a,b)=>String(a.name).localeCompare(String(b.name),undefined,{numeric:true}));
+  if(!doms.length){vp.innerHTML='<div class="empty" style="margin-top:80px">No domains match the current filters.</div>';return;}
+  const wrap=document.createElement('div');wrap.className='mx-wrap';
+  let head='<tr><th class="corner">domain ▸ node</th>'+nodeUuids.map(n=>`<th title="${esc(n.name)} · ${(n.ips||[]).join(', ')}"><div class="rot" style="color:${nodeColor(n)}">${esc(n.name)}</div></th>`).join('')+'<th class="corner" style="left:auto;min-width:70px">issues</th></tr>';
+  let rows=doms.map(d=>{
+    const st=domStatus(d),sc=st==='dead'?COLORS.dead:st==='foreign'?COLORS.foreign:COLORS.domain;
+    const cells=nodeUuids.map(n=>{const on=d.matched.has(n.uuid);
+      return `<td class="cell ${on?'on':''}" data-d="${esc(d.domain)}" data-n="${esc(n.name)}" title="${esc(d.domain)} ${on?'→':'✗'} ${esc(n.name)}"></td>`;}).join('');
+    const badges=(d.dead?'<span class="chip e">dead</span>':'')+(d.foreign.size?`<span class="chip w" title="${[...d.foreign].join(', ')}">${d.foreign.size} foreign</span>`:'')||'<span class="chip" style="color:var(--up);background:rgba(34,211,238,.14)">ok</span>';
+    return `<tr><td class="rowh" data-d="${esc(d.domain)}"><div class="rname" style="color:${sc}">${esc(d.domain)}</div><div class="rsub">${d.matched.size} nodes · ${fmt(d.users)} users · ${[...d.inboundTags].join(', ')}</div></td>${cells}<td style="padding:4px 6px">${badges}</td></tr>`;
+  }).join('');
+  wrap.innerHTML=`<table class="mx"><thead>${head}</thead><tbody>${rows}</tbody></table>`;
+  vp.appendChild(wrap);
+  wrap.querySelectorAll('td.rowh').forEach(td=>td.onclick=()=>showDomainDetailByName(td.dataset.d));
+  wrap.querySelectorAll('td.cell').forEach(td=>td.onclick=()=>{showDomainDetailByName(td.dataset.d);});
+  legend([[COLORS.up,'domain → node match','node'],[COLORS.foreign,'foreign IPs (badge)','foreign'],[COLORS.dead,'dead DNS','domain']]);
+  hint(`${doms.length} domains × ${nodeUuids.length} nodes · cyan = domain resolves to that node · gaps = missing`);
+}
+
+/* ---------------- COUNTRIES (group by country) ---------------- */
+function renderCountries(){
+  const vp=clearVP();
+  const byC=new Map();
+  DATA.nodes.forEach(n=>{const c=n.country||'??';if(!byC.has(c))byC.set(c,[]);byC.get(c).push(n);});
+  const domByC={};
+  MODEL.domains.forEach(d=>{[...d.matched].forEach(u=>{const n=MODEL.nodeByUuid.get(u);if(n){const c=n.country||'??';(domByC[c]=domByC[c]||new Set()).add(d.domain);}});});
+  const arr=[...byC.entries()].map(([c,nodes])=>({c,nodes,users:nodes.reduce((s,n)=>s+(n.usersOnline||0),0),up:nodes.filter(n=>n.connected).length,down:nodes.filter(n=>!n.connected&&!n.disabled).length,dis:nodes.filter(n=>n.disabled).length,doms:domByC[c]?domByC[c].size:0}));
+  arr.sort((a,b)=>b.users-a.users);
+  const wrap=document.createElement('div');wrap.className='mx-wrap';wrap.style.padding='16px';
+  wrap.innerHTML='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:12px">'+arr.map(g=>{
+    const ns=g.nodes.slice().sort((a,b)=>(b.usersOnline||0)-(a.usersOnline||0));
+    return '<div style="border:1px solid var(--cardb);border-radius:12px;padding:12px 14px;background:var(--card)">'
+      +'<div style="display:flex;align-items:center;gap:9px;margin-bottom:9px">'
+      +'<div style="font-size:22px;line-height:1">'+(flag(g.c)||'')+'</div>'
+      +'<div style="font-size:15px;font-weight:700">'+esc(g.c)+'</div>'
+      +'<div style="margin-left:auto;font-size:11.5px;color:var(--mut)">'+g.nodes.length+' nodes &middot; <span style="color:var(--up)">'+g.up+' up</span>'+(g.down?' &middot; <span style="color:var(--down)">'+g.down+' down</span>':'')+(g.dis?' &middot; '+g.dis+' off':'')+'</div></div>'
+      +'<div style="font-size:12px;color:var(--mut);margin-bottom:7px">'+fmt(g.users)+' users online &middot; '+g.doms+' domains</div>'
+      +'<div style="display:flex;flex-wrap:wrap;gap:5px">'+ns.map(n=>'<span class="pill" data-n="'+esc(n.uuid)+'" style="cursor:pointer;border-color:'+(n.disabled?'var(--disabled)':n.connected?'rgba(34,211,238,.45)':'rgba(255,107,129,.65)')+'">'+esc(n.name)+' &middot; '+fmt(n.usersOnline)+'</span>').join('')+'</div></div>';
+  }).join('')+'</div>';
+  vp.appendChild(wrap);
+  wrap.querySelectorAll('.pill[data-n]').forEach(pl=>pl.onclick=()=>{const n=MODEL.nodeByUuid.get(pl.dataset.n);if(n)showNodeDetail(n);});
+  legend([[COLORS.up,'node up','up'],[COLORS.down,'down','down'],[COLORS.dis,'disabled','node']]);
+  hint(arr.length+' countries, sorted by users online; click a node for details');
+}
+/* ---------------- FORCE (clustered) ---------------- */
+function renderForce(){
+  const vp=clearVP(),[W,H]=vpSize();const {svg,g}=makeSvg(vp,W,H);defsGlow(svg);
+  const doms=filteredDomains();const nodesA=[],links=[],by={};
+  const add=o=>{if(!by[o.id]){by[o.id]=o;nodesA.push(o);}return by[o.id];};
+  const ibIndex=new Map(DATA.inbounds.map((i,k)=>[i.uuid,k]));
+  DATA.inbounds.forEach(i=>{if(filters.inbound!=='all'&&i.uuid!==filters.inbound)return;add({id:'i:'+i.uuid,type:'inbound',label:i.tag,meta:i});});
+  doms.forEach(d=>{add({id:'d:'+d.domain,type:'domain',label:short(d.domain),full:d.domain,meta:d,status:domStatus(d)});
+    d.inboundUuids.forEach(u=>{if(by['i:'+u])links.push({source:'i:'+u,target:'d:'+d.domain});});
+    d.matched.forEach(u=>{const n=MODEL.nodeByUuid.get(u);if(!n)return;add({id:'n:'+u,type:'node',label:nodeLabel(n),meta:n});if(!filters.overlay)links.push({source:'d:'+d.domain,target:'n:'+u});});
+    d.foreign.forEach(ip=>{add({id:'f:'+ip,type:'foreign',label:ip});links.push({source:'d:'+d.domain,target:'f:'+ip});});});
+  // Overlay: route node links through the inbound hub (inbound -> serving node) instead of
+  // domain -> every node, which turned each cluster into an all-to-all mesh. Cluster becomes a star.
+  if(filters.overlay){const seen=new Set();
+    nodesA.forEach(o=>{if(o.type!=='node')return;((o.meta&&o.meta.serves)||[]).forEach(u=>{const id='i:'+u;if(by[id]){const k=id+'>'+o.id;if(!seen.has(k)){seen.add(k);links.push({source:id,target:o.id});}}});});}
+  const rOf=d=>filters.uniform?7:(d.type==='inbound'?11:d.type==='node'?5+Math.sqrt((d.meta&&d.meta.usersOnline)||0)*0.32:d.type==='domain'?7:5);
+  const colOf=d=>d.type==='inbound'?COLORS.inbound:d.type==='domain'?(d.status==='dead'?COLORS.dead:d.status==='foreign'?COLORS.foreign:COLORS.domain):d.type==='node'?nodeColor(d.meta):COLORS.foreign;
+  const link=g.append('g').selectAll('line').data(links).join('line').attr('stroke','rgba(130,150,200,.2)').attr('stroke-width',1);
+  const gn=g.append('g').selectAll('g').data(nodesA).join('g').attr('opacity',d=>entStatus(d.type,d.meta).dim?0.45:1).style('cursor','pointer')
+    .call(d3.drag().on('start',(e,d)=>{if(!e.active)sim.alphaTarget(.3).restart();d.fx=d.x;d.fy=d.y;}).on('drag',(e,d)=>{d.fx=e.x;d.fy=e.y;}).on('end',(e,d)=>{if(!e.active)sim.alphaTarget(0);d.fx=null;d.fy=null;}))
+    .on('click',(e,d)=>{e.stopPropagation();if(d.type==='node')showNodeDetail(d.meta);else if(d.type==='domain')showDomainDetailByName(d.full);else if(d.type==='inbound')showInboundDetail(d.meta);})
+    .on('mouseover',(e,d)=>{const st=entStatus(d.type,d.meta);showTipHtml(e,`<b>${entIcon(d.type,{down:d.type==='node'&&nodeDown(d.meta),dead:d.status==='dead',foreign:d.status==='foreign'})}${esc(d.full||d.label)}</b> <span class="s">${d.type}${st.label?' · '+st.label:''}</span>${d.type==='node'?`<br><span class="s">${(d.meta.ips||[]).join(', ')} · ${fmt(d.meta.usersOnline)} users</span>`:''}`);}).on('mousemove',moveTip).on('mouseout',hideTip);
+  gn.append('circle').attr('r',rOf).attr('fill',d=>filters.uniform?'transparent':colOf(d)).attr('stroke',filters.uniform?'none':'rgba(255,255,255,.55)').attr('stroke-width',.8)
+    .attr('filter',d=>(!filters.uniform&&d.type==='inbound')?'url(#gl)':null).attr('class',d=>d.type==='foreign'||(d.type==='domain'&&d.status!=='ok')?'pulse-s':null);
+  // Type glyph on each force node; scale with radius, reuse the same >140 threshold as labels.
+  if(nodesA.length<=140||filters.uniform)glyphOn(gn,d=>d.type==='node'?(nodeDown(d.meta)?'down':'node'):d.type,colOf,d=>Math.max(13,rOf(d)*2.4));
+  gn.append('text').attr('x',d=>rOf(d)+4).attr('dy',3).attr('font-size',d=>d.type==='inbound'?12:10).attr('fill','rgba(231,236,245,.8)')
+    .attr('paint-order','stroke').attr('stroke','rgba(7,10,20,.82)').attr('stroke-width',2.2).text(d=>d.label).style('display',nodesA.length>140?(d=>d.type==='node'?'none':null):null);
+  // Link strength dampened by node degree (mirrors d3's default) so high-degree nodes —
+  // common in Overlay mode, where every domain links to all serving nodes — don't get
+  // over-forced and throw the layout into chaos.
+  const deg={};links.forEach(l=>{deg[l.source]=(deg[l.source]||0)+1;deg[l.target]=(deg[l.target]||0)+1;});
+  const sim=d3.forceSimulation(nodesA).velocityDecay(0.45)
+    .force('link',d3.forceLink(links).id(d=>d.id).distance(d=>d.target&&d.target.type==='node'?42:64).strength(l=>{const s=(l.source&&l.source.id)||l.source,t=(l.target&&l.target.id)||l.target;return 0.55/Math.min(deg[s]||1,deg[t]||1);}))
+    .force('charge',d3.forceManyBody().strength(d=>d.type==='inbound'?-480:-90))
+    .force('x',d3.forceX(d=>{const u=d.type==='inbound'?d.meta.uuid:null;const k=u?ibIndex.get(u):2;return (W*0.12)+((k%5)/4)*(W*0.76);}).strength(.05))
+    .force('y',d3.forceY(H/2).strength(.05)).force('collide',d3.forceCollide().radius(d=>rOf(d)+7)).force('center',d3.forceCenter(W/2,H/2))
+    .on('tick',()=>{link.attr('x1',d=>d.source.x).attr('y1',d=>d.source.y).attr('x2',d=>d.target.x).attr('y2',d=>d.target.y);gn.attr('transform',d=>`translate(${d.x},${d.y})`);});
+  legend([[COLORS.inbound,'inbound','inbound'],[COLORS.domain,'domain','domain'],[COLORS.up,'node up','up'],[COLORS.down,'down','down'],[COLORS.foreign,'foreign/dead','foreign'],...STATUS_LEGEND]);
+  hint('drag nodes · scroll to zoom — Tree/Tiers/Matrix are clearer at scale');
+}
+
+/* ---------------- shared: fit, tooltip, details ---------------- */
+function fitTo(g,svg,W,H){ try{const b=g.node().getBBox();if(!b.width||!b.height)return;
+  const s=Math.min(W/b.width,H/b.height)*0.92,tx=W/2-s*(b.x+b.width/2),ty=H/2-s*(b.y+b.height/2);
+  svg.transition().duration(400).call(curZoom.transform,d3.zoomIdentity.translate(tx,ty).scale(Math.min(s,1.4)));}catch(e){} }
+function showTipHtml(e,h){els.tooltip.innerHTML=h;els.tooltip.style.opacity=1;moveTip(e);}
+function moveTip(e){els.tooltip.style.left=Math.min(e.clientX+12,innerWidth-310)+'px';els.tooltip.style.top=(e.clientY+12)+'px';}
+function hideTip(){els.tooltip.style.opacity=0;}
+function kv(k,v){return `<div class="kv"><span>${k}</span><span>${v}</span></div>`;}
+const cp=v=>v?`<span class="cp" data-copy="${esc(v)}" title="Copy">⧉</span>`:'';
+function showToast(m){const t=document.getElementById('toast');if(!t)return;t.textContent=m;t.classList.add('show');clearTimeout(t._h);t._h=setTimeout(()=>t.classList.remove('show'),1400);}
+function copyText(v){const ok=()=>showToast('Copied: '+v);const fb=()=>{try{const ta=document.createElement('textarea');ta.value=v;ta.style.cssText='position:fixed;opacity:0';document.body.appendChild(ta);ta.select();document.execCommand('copy');ta.remove();ok();}catch(e){showToast('Copy failed');}};if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(v).then(ok).catch(fb);else fb();}
+document.addEventListener('click',e=>{const el=e.target.closest&&e.target.closest('.cp');if(el&&el.dataset.copy!=null){e.stopPropagation();copyText(el.dataset.copy);}});
+function showNodeDetail(n){
+  const st=n.disabled?'dis':n.connected?'up':'down';
+  const inbs=(n.serves||[]).map(u=>(MODEL.inboundByUuid.get(u)||{}).tag||String(u).slice(0,8));
+  const doms=MODEL.domains.filter(d=>d.matched.has(n.uuid));
+  const domHtml=doms.length?doms.map(d=>'<div class="chain-row"><b>'+esc(d.domain)+'</b> <span class="s">'+esc([...d.inboundTags].join(', '))+'</span><div class="s">via hosts: '+esc(d.hosts.join(', '))+'</div></div>').join(''):'<div class="s">No host domain currently routes to this node.</div>';
+  els.modalBody.innerHTML='<div class="det-title">'+entIcon('node',{down:st==='down',color:st==='dis'?COLORS.dis:st==='down'?COLORS.down:COLORS.up})+(flag(n.country)?flag(n.country)+' ':'')+esc(n.name)+' <span class="badge '+st+'">'+(st==='up'?'online':st==='down'?'down':'disabled')+'</span></div>'+kv('Public IP(s)',(n.ips&&n.ips.length)?n.ips.map(ip=>esc(ip)+cp(ip)).join('<br>'):'-')+kv('Mgmt',esc(n.mgmtAddress)+':'+(n.port||'')+cp(n.mgmtAddress))+kv('Country',(n.country?flag(n.country)+' '+n.country:'-'))+kv('Users online',fmt(n.usersOnline))+kv('Live ↑ / ↓',fmtBytes(n.up)+' / '+fmtBytes(n.down))+(n.limitBytes?kv('Traffic used',fmtBytes(n.usedBytes)+' / '+fmtBytes(n.limitBytes)+' ('+Math.round((n.usedBytes||0)/n.limitBytes*100)+'%)'):kv('Traffic used',n.usedBytes!=null?fmtBytes(n.usedBytes):'—'))+kv('Reachable by domain',n.reachableByDomain?'yes':'no')+'<div class="chain-sec"><h4>Serves inbounds ('+inbs.length+')</h4><div class="pillist">'+(inbs.length?inbs.map(t=>'<span class="pill">'+esc(t)+'</span>').join(''):'<span class="s">none</span>')+'</div></div><div class="chain-sec"><h4>Reachable via ('+doms.length+' domains)</h4>'+domHtml+'</div>';
+  els.modalBg.classList.add('show');
+}function showDomainDetailByName(name){const d=MODEL.domains.find(x=>x.domain===name);if(!d)return;switchTab('details');const hasDownNode=[...d.matched].some(u=>nodeDown(MODEL.nodeByUuid.get(u)));
+  const a=DATA.hosts.flatMap(h=>h.addresses).find(z=>z.domain===name)||{ips:[],source:''};
+  const ipsHtml=a.ips.length?a.ips.map(x=>{const n=x.nodeUuid?MODEL.nodeByUuid.get(x.nodeUuid):null;const dn=nodeDown(n);const dis=n&&n.disabled;const col=!n?"rgba(240,136,62,.6)":dn?"rgba(255,107,129,.85)":dis?"rgba(110,118,129,.6)":"rgba(34,211,238,.55)";const lab=!n?(x.ip+" &bull; unregistered IP"):(x.ip+" &rarr; "+esc(n.name)+(dn?" &bull; DOWN":dis?" &bull; off":""));return "<span class=\"pill\" style=\"border-color:"+col+(dn?";color:#ff9aa8":"")+"\">"+lab+"</span>";}).join(""):'<span class="empty" style="margin:4px">no A records (dead)</span>';
+  els.panelDetails.innerHTML=`<div class="det-title">${entIcon('domain',{dead:d.dead,foreign:d.foreign.size>0})} ${esc(name)}${cp(name)} ${d.dead?'<span class="badge down">dead DNS</span>':d.foreign.size?'<span class="badge" style="background:rgba(240,136,62,.18);color:var(--foreign)">foreign IPs</span>':hasDownNode?'<span class="badge down">node down</span>':'<span class="badge up">ok</span>'}</div>
+   ${kv('Inbound(s)',[...d.inboundTags].join(', ')||'—')}${kv('Used by hosts',d.hosts.length)}${kv('Matched nodes',d.matched.size)}${kv('Users (via matched)',fmt(d.users))}${kv('Resolves via',a.source||'—')}
+   <div style="margin-top:8px;font-size:12px;color:var(--mut)">Resolved IPs</div><div class="pillist">${ipsHtml}</div>`;}
+function showHostDetail(h){switchTab('details');
+  els.panelDetails.innerHTML=`<div class="det-title">${entIcon('host')} ${esc(h.remark)} ${h.disabled?'<span class="badge dis">disabled</span>':''}</div>
+   ${kv('Inbound',esc(h.inboundTag||'—'))}${kv('Serving nodes',h.servingNodeUuids.length)}${kv('Live ↑ / ↓',fmtBytes(h.up)+' / '+fmtBytes(h.down))}
+   <div style="margin-top:8px;font-size:12px;color:var(--mut)">Addresses</div>
+   ${h.addresses.map(a=>`<div class="kv"><span>${a.kind}</span><span>${esc(a.domain||a.raw)}${a.kind==='domain'?` · ${a.ips.length} IP`:''}</span></div>`).join('')}`;}
+function showInboundDetail(i){switchTab('details');
+  els.panelDetails.innerHTML=`<div class="det-title">${entIcon('inbound')} ${esc(i.tag||'inbound')}</div>${kv('Type',i.type||'—')}${kv('Port',i.port||'—')}${kv('Hosts',i.hostCount)}${kv('Nodes serving',i.nodeCount)}${kv('Live ↑ / ↓',fmtBytes(i.up)+' / '+fmtBytes(i.down))}${i.profileName?kv('Profile',esc(i.profileName)):''}`;}
+function selectNode(id){selectedId=id;}
+
+function setupAuto(){if(autoTimer){clearInterval(autoTimer);autoTimer=null;}
+  if(els.autoTgl.checked)autoTimer=setInterval(()=>{if(!els.scanBtn.disabled)doScan();},(+els.interval.value)*1000);saveCreds();}
+els.autoTgl.onchange=setupAuto;els.interval.onchange=setupAuto;els.scanBtn.onclick=doScan;
+els.token.addEventListener('keydown',e=>{if(e.key==='Enter')doScan();});
+els.panelUrl.addEventListener('keydown',e=>{if(e.key==='Enter')doScan();});
+
+/* --- Mobile drawer (Issues/Details side panel) toggle --- */
+const sideEl=$('#side'),sideToggleEl=$('#sideToggle'),sideCloseEl=$('#sideClose'),sideBackdropEl=$('#sideBackdrop');
+function openSide(){sideEl.classList.add('open');sideBackdropEl.classList.add('show');}
+function closeSide(){sideEl.classList.remove('open');sideBackdropEl.classList.remove('show');}
+// On phones/tablets, auto-open the drawer when something wants to show in it.
+window.revealSide=()=>{if(window.matchMedia('(max-width:820px)').matches)openSide();};
+sideToggleEl.onclick=()=>{sideEl.classList.contains('open')?closeSide():openSide();};
+sideCloseEl.onclick=closeSide;
+sideBackdropEl.onclick=closeSide;
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeSide();});
+let rT;window.addEventListener('resize',()=>{clearTimeout(rT);rT=setTimeout(()=>{if(DATA)renderView();},250);});
+if(els.panelUrl.value&&els.token.value){doScan().then(setupAuto);}
+</script>
+</body>
+</html>
