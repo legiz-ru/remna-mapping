@@ -4,3 +4,4 @@ node_modules/
 b.err
 b.out
 .DS_Store
+CLAUDE.md
