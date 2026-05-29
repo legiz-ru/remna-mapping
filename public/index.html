@@ -276,7 +276,7 @@
     <select id="fInbound" title="Filter by inbound"><option value="all">All inbounds</option></select>
     <label class="switch"><input id="fIssues" type="checkbox"/> Issues only</label>
     <label class="switch" title="Overlay mode for Netbird / private node IPs. When a node address is an overlay IP that your domains do not resolve to, match domain to node by shared inbound instead of public IP, and stop flagging the public IPs as foreign. Leave OFF for normal panels with public node IPs."><input id="fOverlay" type="checkbox"/> Overlay (Netbird)</label>
-    <label class="switch" title="Uniform node icons — fixed size, ignore users-online scaling and show only the entity glyph"><input id="fUniform" type="checkbox"/> Uniform icons</label>
+    <label class="switch" title="Uniform node icons — fixed size, ignore users-online scaling and show only the entity glyph"><input id="fUniform" type="checkbox" checked autocomplete="off"/> Uniform icons</label>
     <input id="search" type="text" placeholder="search domain / node / host" autocomplete="off"/>
     <button id="expandBtn" class="btn ghost" title="Expand the whole tree">Expand all</button>
     <button id="collapseBtn" class="btn ghost" title="Collapse the tree">Collapse</button>
@@ -312,7 +312,7 @@ const els={panelUrl:$('#panelUrl'),token:$('#token'),scanBtn:$('#scanBtn'),autoT
   err:$('#errBanner'),tooltip:$('#tooltip'),viewport:$('#viewport'),
   panelIssues:$('#panelIssues'),panelDetails:$('#panelDetails'),issueCount:$('#issueCount'),modalBg:$('#modalBg'),modalX:$('#modalX'),modalBody:$('#modalBody')};
 let DATA=null,MODEL=null,autoTimer=null,viewMode='tree',selectedId=null,treeExpandAll=false;
-let filters={inbound:'all',issuesOnly:false,search:'',overlay:false,uniform:false};
+let filters={inbound:'all',issuesOnly:false,search:'',overlay:false,uniform:true};
 // Entity / status colors aligned to the Remnawave palette (cyan primary, GitHub-dark surfaces).
 const COLORS={inbound:'#a78bfa',host:'#22d3ee',domain:'#06b6d4',dead:'#ff6b81',foreign:'#f0883e',up:'#22d3ee',down:'#ff6b81',dis:'#6e7681'};
 const VIEWS=[['tree','Tree'],['tiers','Tiers'],['sankey','Sankey'],['matrix','Matrix'],['countries','Countries'],['force','Force']];
@@ -379,6 +379,7 @@ els.fInbound.onchange=()=>{filters.inbound=els.fInbound.value;renderView();};
 els.fIssues.onchange=()=>{filters.issuesOnly=els.fIssues.checked;renderView();};
 els.fOverlay.onchange=()=>{filters.overlay=els.fOverlay.checked;if(DATA){MODEL=buildModel();renderIssues();renderView();}};
 els.fUniform.onchange=()=>{filters.uniform=els.fUniform.checked;renderView();};
+els.fUniform.checked=true;filters.uniform=true;   // always start ON (ignore any browser-restored checkbox state)
 els.exportBtn.onclick=()=>exportData();
 let searchT;els.search.oninput=()=>{filters.search=els.search.value.trim().toLowerCase();clearTimeout(searchT);searchT=setTimeout(renderView,250);};
 els.fitBtn.onclick=()=>renderView();
