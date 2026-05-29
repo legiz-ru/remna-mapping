@@ -99,22 +99,21 @@ function releaseScanSlot() {
   const next = scanWaiters.shift();
   if (next) next(true); else activeScans--;       // hand the slot to the next waiter, or free it
 }
-function scanWithTimeout(panelUrl, token, ms) {
+function scanWithTimeout(panelUrl, token, ms, opts) {
   return new Promise((resolve, reject) => {
     const t = setTimeout(() => reject(new Error('scan timed out after ' + ms + 'ms')), ms);
-    scan(panelUrl, token).then((v) => { clearTimeout(t); resolve(v); }, (e) => { clearTimeout(t); reject(e); });
+    scan(panelUrl, token, opts).then((v) => { clearTimeout(t); resolve(v); }, (e) => { clearTimeout(t); reject(e); });
   });
 }
 
-async function panelGet(base, token, p) {
+async function panelGet(base, token, p, extra) {
   const url = base + p;
   const ctrl = new AbortController();
   const to = setTimeout(() => ctrl.abort(), 20000);
   try {
-    const r = await fetch(url, {
-      headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
-      signal: ctrl.signal,
-    });
+    const headers = { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' };
+    if (extra) Object.assign(headers, extra);
+    const r = await fetch(url, { headers, signal: ctrl.signal });
     const text = await r.text();
     let body; try { body = JSON.parse(text); } catch { body = text; }
     return { ok: r.ok, status: r.status, body };
@@ -173,15 +172,33 @@ function splitAddress(addr) {
   return String(addr).split(',').map(s => s.trim()).filter(Boolean);
 }
 
+// Parse cookie value: accepts raw "name=value; name2=val2" or JSON {"name":"value"}.
+function parseCookieHeader(s) {
+  if (!s || !s.trim()) return null;
+  s = s.trim();
+  if (s.startsWith('{')) {
+    try {
+      const obj = JSON.parse(s);
+      return Object.entries(obj).map(([k, v]) => `${k}=${v}`).join('; ');
+    } catch {}
+  }
+  return s;
+}
+
 // ---------- core scan ----------
-async function scan(panelUrl, token) {
+// opts: { apiKey?: string, cookieHeader?: string }
+async function scan(panelUrl, token, opts) {
   const base = normalizePanelUrl(panelUrl);
+  const extra = {};
+  if (opts && opts.apiKey) extra['X-Api-Key'] = String(opts.apiKey).trim();
+  if (opts && opts.cookieHeader) { const c = parseCookieHeader(opts.cookieHeader); if (c) extra['Cookie'] = c; }
+  const pg = (p) => panelGet(base, token, p, Object.keys(extra).length ? extra : undefined);
   const [hostsR, nodesR, profR, statsR, metricsR] = await Promise.all([
-    panelGet(base, token, '/api/hosts'),
-    panelGet(base, token, '/api/nodes'),
-    panelGet(base, token, '/api/config-profiles').catch(() => ({ ok: false })),
-    panelGet(base, token, '/api/system/stats').catch(() => ({ ok: false })),
-    panelGet(base, token, '/api/system/nodes/metrics').catch(() => ({ ok: false })),
+    pg('/api/hosts'),
+    pg('/api/nodes'),
+    pg('/api/config-profiles').catch(() => ({ ok: false })),
+    pg('/api/system/stats').catch(() => ({ ok: false })),
+    pg('/api/system/nodes/metrics').catch(() => ({ ok: false })),
   ]);
 
   if (!hostsR.ok) throw new Error('GET /api/hosts failed: HTTP ' + hostsR.status + ' ' + JSON.stringify(hostsR.body).slice(0, 200));
@@ -426,12 +443,15 @@ const server = http.createServer((req, res) => {
       res.setHeader('content-type', 'application/json; charset=utf-8');
       let creds;
       try { creds = JSON.parse(body || '{}'); } catch { res.writeHead(400); return res.end(JSON.stringify({ error: 'invalid JSON body' })); }
-      const { panelUrl, token } = creds || {};
+      const { panelUrl, token, apiKey, cookieHeader } = creds || {};
       if (!panelUrl || !token) { res.writeHead(400); return res.end(JSON.stringify({ error: 'panelUrl and token are required' })); }
       const slot = await acquireScanSlot();
       if (!slot) { res.writeHead(503, { 'retry-after': '5' }); return res.end(JSON.stringify({ error: 'server busy — too many concurrent scans, retry shortly' })); }
+      const opts = {};
+      if (apiKey) opts.apiKey = apiKey;
+      if (cookieHeader) opts.cookieHeader = cookieHeader;
       try {
-        const out = await scanWithTimeout(panelUrl, token, SCAN_TIMEOUT_MS);
+        const out = await scanWithTimeout(panelUrl, token, SCAN_TIMEOUT_MS, opts);
         res.writeHead(200); res.end(JSON.stringify(out));
       } catch (e) {
         res.writeHead(/timed out/.test(e.message) ? 504 : 500); res.end(JSON.stringify({ error: e.message }));
