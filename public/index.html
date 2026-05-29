@@ -501,6 +501,17 @@ function legend(items){const l=document.createElement('div');l.className='legend
   // items: [color, label, iconType?] — render the entity glyph when an icon type is given, else a color dot.
   l.innerHTML=items.map(([c,t,ic])=>`<div>${ic?icon(ic,c):`<i style="background:${c}"></i>`}${t}</div>`).join('');els.viewport.appendChild(l);}
 function hint(t){const h=document.createElement('div');h.className='hint';h.textContent=t;els.viewport.appendChild(h);}
+// Append a centered, type-colored inline-SVG glyph (reusing ICONS bodies) onto a D3 node <g>.
+// `key` selects the ICONS glyph, `color` tints it (glyph uses currentColor). `sz`=box size (px).
+// pointer-events:none keeps the group's click/hover/drag handlers firing through the glyph.
+function glyphOn(sel,key,color,sz,dx,dy){sz=sz||16;dx=dx||0;dy=dy||0;
+  sel.each(function(d){const k=typeof key==='function'?key(d):key;if(!k||!ICONS[k])return;
+    const c=typeof color==='function'?color(d):color;const s=typeof sz==='function'?sz(d):sz;
+    d3.select(this).append('svg').attr('class','node-glyph').attr('viewBox','0 0 16 16')
+      .attr('width',s).attr('height',s).attr('x',-s/2+dx).attr('y',-s/2+dy)
+      .style('color',c).attr('fill','none').attr('stroke','currentColor').attr('stroke-width',1.4)
+      .attr('stroke-linecap','round').attr('stroke-linejoin','round').attr('pointer-events','none')
+      .html(ICONS[k]);});}
 
 function renderView(){
   if(!DATA){return;} clearVP();
@@ -551,6 +562,9 @@ function renderTree(){
   const dur=350;
   function rOf(d){return d.data.type==='inbound'?7:d.data.type==='node'?5+Math.sqrt((d.data.meta&&d.data.meta.usersOnline)||0)*0.25:d.data.type==='root'?8:5;}
   function colOf(d){const t=d.data.type;return t==='inbound'?COLORS.inbound:t==='host'?COLORS.host:t==='domain'?(d.data.dead?COLORS.dead:d.data.foreign?COLORS.foreign:COLORS.domain):t==='node'?nodeColor(d.data.meta):t==='foreign'?COLORS.foreign:'#9fb0c8';}
+  // Map a tree datum to its entity glyph (root → none; down node → 'down'), mirroring entIcon().
+  function treeGlyphKey(d){const t=d.data.type;if(t==='root')return null;
+    if(t==='node')return nodeDown(d.data.meta)?'down':'node';return t;}
   function update(src){
     tree(root); const nodes=root.descendants(),links=root.links();
     g.selectAll('path.lnk').data(links,d=>d.target.data.__id||(d.target.data.__id=++uid)).join(
@@ -564,6 +578,8 @@ function renderTree(){
       .on('mouseover',(e,d)=>tipTree(e,d)).on('mousemove',moveTip).on('mouseout',hideTip);
     en.append('circle').attr('r',rOf).attr('fill',colOf).attr('stroke',d=>d._children?'#fff':'rgba(255,255,255,.5)').attr('stroke-width',d=>d._children?1.8:.8)
       .attr('class',d=>d.data.type==='domain'&&(d.data.dead||d.data.foreign)?'pulse-s':null);
+    // Type glyph on each node (root stays a plain dot); scale with radius, skip on very large trees.
+    if(nodes.length<=140)glyphOn(en,d=>treeGlyphKey(d),colOf,d=>Math.max(13,rOf(d)*2.4));
     en.append('text').attr('dy',3).attr('x',d=>rOf(d)+5).attr('font-size',d=>d.data.type==='inbound'?12:10.5)
       .attr('fill',d=>d.data.type==='inbound'?'#cdbcff':'rgba(231,236,245,.85)')
       .attr('paint-order','stroke').attr('stroke','rgba(7,10,20,.85)').attr('stroke-width',2.4)
@@ -623,6 +639,9 @@ function renderTiers(){
   gn.append('circle').attr('r',d=>d.type==='node'?Math.max(3,4+Math.sqrt(d.users||0)*0.2):d.type==='inbound'?7:5).attr('fill',d=>d.color)
     .attr('stroke','rgba(255,255,255,.5)').attr('stroke-width',.7).attr('filter',d=>d.type==='inbound'?'url(#gl)':null)
     .attr('class',d=>d.type==='foreign'||(d.type==='domain'&&domStatus(d.meta)!=='ok')?'pulse-s':null);
+  // Type glyph centered on each tier node (color already computed in d.color); skip when crowded.
+  if(all.length<=140)glyphOn(gn,d=>d.type==='node'?(nodeDown(d.meta)?'down':'node'):d.type,d=>d.color,
+    d=>Math.max(13,(d.type==='node'?Math.max(3,4+Math.sqrt(d.users||0)*0.2):d.type==='inbound'?7:5)*2.4));
   gn.append('text').attr('x',d=>d.col==='node'?0:8).attr('dy',3).attr('font-size',10).attr('fill','rgba(231,236,245,.8)')
     .attr('text-anchor',d=>d.x>W*0.8?'end':'start').attr('x',d=>d.x>W*0.8?-8:8)
     .attr('paint-order','stroke').attr('stroke','rgba(7,10,20,.8)').attr('stroke-width',2.2)
@@ -667,6 +686,11 @@ function renderSankey(){
   gn.append('text').attr('x',d=>d.x0<W/2?d.x1+5:d.x0-5).attr('y',d=>(d.y0+d.y1)/2).attr('dy',3).attr('text-anchor',d=>d.x0<W/2?'start':'end')
     .attr('font-size',10.5).attr('fill','rgba(231,236,245,.82)').attr('paint-order','stroke').attr('stroke','rgba(7,10,20,.82)').attr('stroke-width',2.2)
     .text(d=>(d.y1-d.y0)>6?d.name:'');
+  // Small type glyph beside the label (centered 16px won't fit the thin bar); subtle, only on tall-enough bars.
+  if(graph.nodes.length<=140){const SZ=12;
+    glyphOn(gn,d=>(d.y1-d.y0)<=6?null:(d.type==='node'?(nodeDown(d.meta)?'down':'node'):d.type),col,SZ,
+      d=>d.x0<W/2?d.x1+5+SZ/2:d.x0-5-SZ/2,d=>(d.y0+d.y1)/2);
+    gn.selectAll('text').attr('x',d=>d.x0<W/2?d.x1+5+SZ+3:d.x0-5-SZ-3);}
   setTimeout(()=>fitTo(g,svg,W,H),60);
   legend([[COLORS.inbound,'inbound','inbound'],[COLORS.domain,'domain','domain'],[COLORS.up,'node (width = users)','up'],[COLORS.foreign,'foreign IP','foreign']]);
   hint('flow width = users online · drag/scroll to navigate');
@@ -742,6 +766,8 @@ function renderForce(){
     .on('mouseover',(e,d)=>showTipHtml(e,`<b>${entIcon(d.type,{down:d.type==='node'&&nodeDown(d.meta),dead:d.status==='dead',foreign:d.status==='foreign'})}${esc(d.full||d.label)}</b> <span class="s">${d.type}</span>${d.type==='node'?`<br><span class="s">${(d.meta.ips||[]).join(', ')} · ${fmt(d.meta.usersOnline)} users</span>`:''}`)).on('mousemove',moveTip).on('mouseout',hideTip);
   gn.append('circle').attr('r',rOf).attr('fill',colOf).attr('stroke','rgba(255,255,255,.55)').attr('stroke-width',.8)
     .attr('filter',d=>d.type==='inbound'?'url(#gl)':null).attr('class',d=>d.type==='foreign'||(d.type==='domain'&&d.status!=='ok')?'pulse-s':null);
+  // Type glyph on each force node; scale with radius, reuse the same >140 threshold as labels.
+  if(nodesA.length<=140)glyphOn(gn,d=>d.type==='node'?(nodeDown(d.meta)?'down':'node'):d.type,colOf,d=>Math.max(13,rOf(d)*2.4));
   gn.append('text').attr('x',d=>rOf(d)+4).attr('dy',3).attr('font-size',d=>d.type==='inbound'?12:10).attr('fill','rgba(231,236,245,.8)')
     .attr('paint-order','stroke').attr('stroke','rgba(7,10,20,.82)').attr('stroke-width',2.2).text(d=>d.label).style('display',nodesA.length>140?(d=>d.type==='node'?'none':null):null);
   const sim=d3.forceSimulation(nodesA)
