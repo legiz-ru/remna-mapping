@@ -1,4 +1,5 @@
 # VPN Topology Mapper
+<img width="1426" height="951" alt="image" src="https://github.com/user-attachments/assets/e55f3afb-47d6-486c-ab32-c17434167947" />
 
 A small web service for Remnawave panels. Enter your **panel URL** and **API token**, and it:
 
