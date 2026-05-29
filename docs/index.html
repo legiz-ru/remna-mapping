@@ -62,7 +62,7 @@
   .bar-extra{display:none;align-items:center;gap:var(--sp-xs);padding:6px var(--sp-md);border-bottom:1px solid var(--bd);background:rgba(13,17,23,.4);flex-wrap:wrap}
   .bar-extra.open{display:flex}
   .bar-extra label{font-size:12px;color:var(--mut);white-space:nowrap}
-  #apiKey{width:160px} #cookieHdr{width:220px;flex:1;min-width:150px}
+  #cookieHdr{width:320px;flex:1;min-width:150px}
   #extraToggle{padding:0 10px;font-size:16px;line-height:1;letter-spacing:1px}
   /* Mantine Button: height 36px (size sm), padding-x 18px, font-size 14px, font-weight 500 (medium),
      radius md, transition all .2s ease (overrides/buttons.tsx). Filled accent for the primary CTA. */
@@ -270,7 +270,7 @@
     <div class="logo"><span class="dot"></span> REMNAWAVE Topology Mapper</div>
     <input id="panelUrl" type="text" placeholder="panel.example.com" autocomplete="off" spellcheck="false"/>
     <input id="token" type="password" placeholder="API token" autocomplete="off" spellcheck="false"/>
-    <button id="extraToggle" class="btn ghost" title="Extra auth headers: X-Api-Key, Cookie">···</button>
+    <button id="extraToggle" class="btn ghost" title="Cookie header (eGames proxy auth)">···</button>
     <button id="scanBtn" class="btn">Scan</button>
     <label class="switch"><input id="autoTgl" type="checkbox"/> Auto</label>
     <select id="interval" class="btn ghost" style="padding:8px"><option value="15">15s</option><option value="30" selected>30s</option><option value="60">60s</option><option value="120">2m</option></select>
@@ -279,10 +279,8 @@
   </div>
 
   <div class="bar-extra" id="barExtra">
-    <label>X-Api-Key</label>
-    <input id="apiKey" type="password" placeholder="optional" autocomplete="off" spellcheck="false"/>
     <label>Cookie</label>
-    <input id="cookieHdr" type="text" placeholder='optional — raw: name=val  or JSON: {"name":"val"}' autocomplete="off" spellcheck="false"/>
+    <input id="cookieHdr" type="text" placeholder='name=value  или  {"name":"value"}' autocomplete="off" spellcheck="false"/>
   </div>
 
   <div class="privacy"><b>GitHub Pages edition — runs entirely in your browser.</b> Your token is sent <b>directly</b> from this browser to your panel (no intermediate server). DNS uses <a href="https://dns.google" target="_blank" rel="noopener noreferrer">Google DoH</a>. <b>CORS required:</b> your panel's reverse proxy must allow <code style="font-family:monospace;background:rgba(6,182,212,.1);padding:1px 5px;border-radius:3px;color:var(--acc-hi)">Origin: https://legiz-ru.github.io</code> — see the <a href="https://github.com/legiz-ru/remna-mapping#cors-setup" target="_blank" rel="noopener noreferrer">CORS setup instructions</a>. For panels without CORS use the <a href="https://github.com/legiz-ru/remna-mapping#quick-start-docker" target="_blank" rel="noopener noreferrer">self-hosted Docker version</a> instead.</div>
@@ -442,7 +440,6 @@ async function panelGet(base, token, p, extra) {
 async function scan(panelUrl, token, opts) {
   const base = normalizePanelUrl(panelUrl);
   const extra = {};
-  if (opts && opts.apiKey) extra['X-Api-Key'] = String(opts.apiKey).trim();
   if (opts && opts.cookieHeader) { const c = parseCookieHeader(opts.cookieHeader); if (c) extra['Cookie'] = c; }
   const pg = p => panelGet(base, token, p, Object.keys(extra).length ? extra : undefined);
   const [hostsR, nodesR, profR, statsR, metricsR] = await Promise.all([
@@ -628,7 +625,7 @@ async function scan(panelUrl, token, opts) {
 </script>
 <script>
 const $=s=>document.querySelector(s);
-const els={panelUrl:$('#panelUrl'),token:$('#token'),apiKey:$('#apiKey'),cookieHdr:$('#cookieHdr'),scanBtn:$('#scanBtn'),autoTgl:$('#autoTgl'),interval:$('#interval'),
+const els={panelUrl:$('#panelUrl'),token:$('#token'),cookieHdr:$('#cookieHdr'),scanBtn:$('#scanBtn'),autoTgl:$('#autoTgl'),interval:$('#interval'),
   remember:$('#rememberTgl'),meta:$('#meta'),stats:$('#stats'),toolbar:$('#toolbar'),views:$('#views'),
   fInbound:$('#fInbound'),fIssues:$('#fIssues'),search:$('#search'),fitBtn:$('#fitBtn'),expandBtn:$('#expandBtn'),collapseBtn:$('#collapseBtn'),fOverlay:$('#fOverlay'),fUniform:$('#fUniform'),exportBtn:$('#exportBtn'),
   err:$('#errBanner'),tooltip:$('#tooltip'),viewport:$('#viewport'),
@@ -683,14 +680,12 @@ function issueIcon(i){const t=String(i.type||'').toUpperCase();
 
 try{const s=JSON.parse(localStorage.getItem('vtm')||'{}');
   if(s.panelUrl)els.panelUrl.value=s.panelUrl; if(s.token)els.token.value=s.token;
-  if(s.apiKey){els.apiKey.value=s.apiKey;$('#barExtra').classList.add('open');}
   if(s.cookieHdr){els.cookieHdr.value=s.cookieHdr;$('#barExtra').classList.add('open');}
   if(typeof s.auto==='boolean')els.autoTgl.checked=s.auto; if(s.interval)els.interval.value=s.interval;
   if(typeof s.remember==='boolean')els.remember.checked=s.remember; if(s.view)viewMode=s.view;}catch(e){}
 function saveCreds(){ if(!els.remember.checked){localStorage.removeItem('vtm');return;}
   const d={panelUrl:els.panelUrl.value.trim(),token:els.token.value.trim(),
     auto:els.autoTgl.checked,interval:els.interval.value,remember:true,view:viewMode};
-  if(els.apiKey.value.trim()) d.apiKey=els.apiKey.value.trim();
   if(els.cookieHdr.value.trim()) d.cookieHdr=els.cookieHdr.value.trim();
   localStorage.setItem('vtm',JSON.stringify(d));}
 const fmt=n=>n==null?'—':n.toLocaleString('en-US');
@@ -727,12 +722,10 @@ async function doScan(){
   const panelUrl=els.panelUrl.value.trim(),token=els.token.value.trim();
   if(!panelUrl||!token){showErr('Enter panel URL and API token.');return;}
   els.scanBtn.disabled=true;els.scanBtn.innerHTML='<span class="spinner"></span> Scanning';hideErr();saveCreds();
-  const apiKey=els.apiKey.value.trim(),cookieHdr=els.cookieHdr.value.trim();
-  const opts={};
-  if(apiKey) opts.apiKey=apiKey;
-  if(cookieHdr) opts.cookieHeader=cookieHdr;
+  const cookieHdr=els.cookieHdr.value.trim();
+  const opts=cookieHdr?{cookieHeader:cookieHdr}:undefined;
   try{
-    const j=await scan(panelUrl,token,Object.keys(opts).length?opts:undefined);
+    const j=await scan(panelUrl,token,opts);
     DATA=j;MODEL=buildModel();populateInbounds();renderStats();renderIssues();renderView();
     els.toolbar.style.display='flex';syncTreeControls();els.meta.innerHTML=`<b style="color:#e7ecf5">${esc(j.panel.replace(/^https?:\/\//,''))}</b><br>scanned ${new Date().toLocaleTimeString()}`;
   }catch(e){

@@ -186,11 +186,10 @@ function parseCookieHeader(s) {
 }
 
 // ---------- core scan ----------
-// opts: { apiKey?: string, cookieHeader?: string }
+// opts: { cookieHeader?: string }
 async function scan(panelUrl, token, opts) {
   const base = normalizePanelUrl(panelUrl);
   const extra = {};
-  if (opts && opts.apiKey) extra['X-Api-Key'] = String(opts.apiKey).trim();
   if (opts && opts.cookieHeader) { const c = parseCookieHeader(opts.cookieHeader); if (c) extra['Cookie'] = c; }
   const pg = (p) => panelGet(base, token, p, Object.keys(extra).length ? extra : undefined);
   const [hostsR, nodesR, profR, statsR, metricsR] = await Promise.all([
@@ -443,13 +442,11 @@ const server = http.createServer((req, res) => {
       res.setHeader('content-type', 'application/json; charset=utf-8');
       let creds;
       try { creds = JSON.parse(body || '{}'); } catch { res.writeHead(400); return res.end(JSON.stringify({ error: 'invalid JSON body' })); }
-      const { panelUrl, token, apiKey, cookieHeader } = creds || {};
+      const { panelUrl, token, cookieHeader } = creds || {};
       if (!panelUrl || !token) { res.writeHead(400); return res.end(JSON.stringify({ error: 'panelUrl and token are required' })); }
       const slot = await acquireScanSlot();
       if (!slot) { res.writeHead(503, { 'retry-after': '5' }); return res.end(JSON.stringify({ error: 'server busy — too many concurrent scans, retry shortly' })); }
-      const opts = {};
-      if (apiKey) opts.apiKey = apiKey;
-      if (cookieHeader) opts.cookieHeader = cookieHeader;
+      const opts = cookieHeader ? { cookieHeader } : {};
       try {
         const out = await scanWithTimeout(panelUrl, token, SCAN_TIMEOUT_MS, opts);
         res.writeHead(200); res.end(JSON.stringify(out));
