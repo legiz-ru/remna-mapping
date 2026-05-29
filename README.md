@@ -5,7 +5,7 @@ A small web service for Remnawave panels. Enter your **panel URL** and **API tok
 
 - pulls every **host** (connection entry points / domains) and every **node** (servers / IPs) from the panel,
 - **resolves each host domain via DNS** and matches the resulting IPs against your nodes,
-- draws the whole **host → domain → IP → node** relationship as an animated tree on a dark canvas, with live **node status**, **users online**, and **traffic** (cumulative usage + live per-inbound throughput),
+- **visualizes** the whole **host → domain → IP → node** relationship across **six views** (tree, tiers, sankey, matrix, by-country, force) on a dark canvas — with **entity icons**, **per-element status** (active / down / disabled), live **users online**, and **traffic** (cumulative usage + live per-inbound throughput),
 - flags **inconsistencies**: dead DNS, IPs not registered as nodes, stale IP hosts, backend nodes no domain points to, shared node IPs, partial balancers, cross-inbound domain reuse, and nodes near/over their traffic limit.
 
 It's built for the exact layout you have in Granit: hosts carry subdomains (sometimes comma-separated balancer lists), nodes carry IPs, and a host's public IP can live in either the node's `address` or its `name` — the matcher checks both.
@@ -43,7 +43,34 @@ docker run -d -p 8088:8088 --name vtm vpn-topology-mapper
 ```bash
 node server.js          # http://localhost:8088
 PORT=9000 node server.js
+node --test             # run the test suite (zero-dep, built-in node:test)
 ```
+
+Zero runtime dependencies — the backend is a single `server.js`, the UI a single self-contained `public/index.html` (D3 + d3-sankey from CDN). No build step.
+
+## Views & controls
+
+Pick a layout from the toolbar — each renders the same scan a different way:
+
+| View | Shows |
+|---|---|
+| **Tree** | Collapsible hierarchy `inbound → host → domain → node` (use **Expand all** / **Collapse**). |
+| **Tiers** | Layered columns: inbounds → hosts → domains → nodes/IPs. |
+| **Sankey** | Flow diagram; link width = users online. |
+| **Matrix** | `domain × node` grid — a green cell means that domain resolves to that node. |
+| **Countries** | Nodes grouped by country, sorted by users online. |
+| **Force** | Clustered force-directed graph (in Overlay it clusters as a star per inbound). |
+
+Every element carries an **entity icon** (inbound / host / node / domain / IP) and a **status**: active, **down** (disconnected), or **disabled/hidden** (dimmed + greyed); domains show **ok / dead / foreign**. Click any element for a detail panel (IPs, inbounds, traffic, what it connects to). Click the **⧉** beside an IP or domain to copy it.
+
+Toolbar:
+- **Filter by inbound** and **Issues only** to narrow the graph.
+- **Overlay (Netbird)** — for panels whose nodes use private/overlay IPs (e.g. Netbird) that your domains don't resolve to: match domain → node by **shared inbound** instead of public IP, and stop flagging the public IPs as foreign. Leave **off** for normal panels with public node IPs.
+- **Uniform icons** (on by default) — fixed-size entity icons; turn **off** to scale node size by users-online.
+- **Search** domains / nodes / hosts · **Fit** resets zoom · **Export issues** downloads a CSV of issues + a JSON of the full topology.
+- **Auto** re-scans every 15s–2m · **Remember** stores the URL + token in this browser's `localStorage` only.
+
+The UI is responsive — on narrow screens the side panel becomes a drawer (toggle bottom-right). Drag to pan, scroll to zoom.
 
 ## How the matching works
 
