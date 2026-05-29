@@ -82,6 +82,10 @@
   .privacy{font-size:11.5px;color:#9fbcc8;background:rgba(6,182,212,.06);border-bottom:1px solid var(--bd);padding:8px var(--sp-md);line-height:1.4}
   .privacy b{color:#c9d1d9;font-weight:600}
   .privacy a{color:var(--acc-hi);text-decoration:none;border-bottom:1px solid rgba(34,211,238,.4)}
+  .credits{font-size:11px;color:var(--mut);background:rgba(255,255,255,.02);border-bottom:1px solid var(--bd);padding:6px var(--sp-md);line-height:1.5;display:flex;flex-wrap:wrap;gap:3px 14px;align-items:center}
+  .credits b{color:var(--txt);font-weight:600} .credits .sep{opacity:.4}
+  .credits a{color:var(--acc-hi);text-decoration:none;border-bottom:1px solid rgba(34,211,238,.4)}
+  .credits a:hover{color:#bfeaff;border-bottom-color:#bfeaff}
   .privacy a:hover{color:#7ce9f7;border-bottom-color:#7ce9f7}
   .stats{display:flex;gap:var(--sp-sm);padding:var(--sp-sm) var(--sp-md);flex-wrap:wrap;border-bottom:1px solid var(--bd);background:rgba(13,17,23,.4)}
   /* Mantine Card: gradient dark-6→dark-7, withBorder hairline, radius md, soft elevation (overrides/card). */
@@ -269,6 +273,13 @@
   </div>
 
   <div class="privacy"><b>Local-only.</b> Your panel URL and token are kept in this browser's local storage and are sent only to your panel when you scan. Nothing is stored on any server, and no data leaves your machine except DNS lookups of host domains. <b>Open-source</b> — <a href="https://github.com/DigneZzZ/remna-mapping" target="_blank" rel="noopener noreferrer">github.com/DigneZzZ/remna-mapping</a>.</div>
+  <div class="credits">
+    <span>A <a href="https://gig.ovh" target="_blank" rel="noopener noreferrer"><b>GIG.ovh</b></a> project by <a href="https://github.com/DigneZzZ" target="_blank" rel="noopener noreferrer">DigneZzZ</a></span>
+    <span class="sep">·</span>
+    <span>More projects: <a href="https://ziphub.dev" target="_blank" rel="noopener noreferrer">ZipHub.dev</a>, <a href="https://openode.xyz" target="_blank" rel="noopener noreferrer">OpeNode.xyz</a></span>
+    <span class="sep">·</span>
+    <span>Telegram: <a href="https://t.me/gig_ovh" target="_blank" rel="noopener noreferrer">@gig_ovh</a>, <a href="https://t.me/+I57W0d7XyuE5ODQy" target="_blank" rel="noopener noreferrer">OpeNode</a></span>
+  </div>
   <div class="stats" id="stats" style="display:none"></div>
 
   <div class="toolbar" id="toolbar" style="display:none">

@@ -10,6 +10,13 @@ A small web service for Remnawave panels. Enter your **panel URL** and **API tok
 
 It's built for the exact layout you have in Granit: hosts carry subdomains (sometimes comma-separated balancer lists), nodes carry IPs, and a host's public IP can live in either the node's `address` or its `name` — the matcher checks both.
 
+## Author & related projects
+
+A **[GIG.ovh](https://gig.ovh)** project by **[DigneZzZ](https://github.com/DigneZzZ)**.
+
+- Other projects: **[ZipHub.dev](https://ziphub.dev)** · **[OpeNode.xyz](https://openode.xyz)**
+- Telegram: **[GIG.ovh — @gig_ovh](https://t.me/gig_ovh)** · **[OpeNode group](https://t.me/+I57W0d7XyuE5ODQy)**
+
 ## Quick start (Docker)
 
 ```bash
