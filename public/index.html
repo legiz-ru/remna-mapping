@@ -41,6 +41,8 @@
     --tr:all .2s ease;
   }
   *{box-sizing:border-box}
+  /* Accent focus-visible for keyboard nav (theme.ts focusRing:'never' → no default ring; provide our own). */
+  :focus-visible{outline:2px solid var(--focus);outline-offset:2px}
   html,body{margin:0;height:100%}
   body{font-family:Montserrat,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
     background:radial-gradient(1200px 800px at 70% -10%,#161b22 0%,var(--bg1) 42%,var(--bg0) 100%);
@@ -142,7 +144,7 @@
   .filterrow button{font-size:11px;font-weight:500;padding:5px 10px;border-radius:var(--rad);border:1px solid var(--bd);background:rgba(255,255,255,.03);color:var(--mut);cursor:pointer;transition:var(--tr)}
   .filterrow button:hover{border-color:var(--bd-strong);color:var(--txt)}
   .filterrow button.on{color:var(--acc-hi);border-color:rgba(6,182,212,.45);background:rgba(6,182,212,.12)}
-  .kv{display:flex;justify-content:space-between;gap:10px;font-size:12.5px;padding:5px 0;border-bottom:1px dashed rgba(255,255,255,.06)}
+  .kv{display:flex;justify-content:space-between;gap:10px;font-size:12.5px;padding:6px 0;border-bottom:1px dashed var(--bd-soft)}
   .kv span:first-child{color:var(--mut)} .kv span:last-child{text-align:right;word-break:break-word}
   .det-title{font-size:15px;font-weight:600;margin:2px 0 10px;display:flex;align-items:center;gap:8px}
   .det-title .ic svg{display:block;width:17px;height:17px;flex:0 0 auto}
@@ -181,13 +183,15 @@
   /* matrix */
   .mx-wrap{position:absolute;inset:0;overflow:auto;padding:12px}
   table.mx{border-collapse:separate;border-spacing:0;font-size:11.5px}
-  table.mx th,table.mx td{border-bottom:1px solid rgba(255,255,255,.05);border-right:1px solid rgba(255,255,255,.04)}
+  /* Mantine Table (highlightOnHover): hairline grid borders (dark-alpha), sticky headers. */
+  table.mx th,table.mx td{border-bottom:1px solid var(--bd-soft);border-right:1px solid rgba(255,255,255,.04)}
   table.mx thead th{position:sticky;top:0;background:#0d1117;z-index:2;height:118px;vertical-align:bottom;padding:4px}
   table.mx thead th .rot{writing-mode:vertical-rl;transform:rotate(180deg);white-space:nowrap;color:var(--mut);font-weight:600;max-height:108px;overflow:hidden}
-  table.mx td.rowh,table.mx th.corner{position:sticky;left:0;background:#0d1117;z-index:1;text-align:left;padding:5px 9px;min-width:150px;max-width:200px}
+  table.mx td.rowh,table.mx th.corner{position:sticky;left:0;background:#0d1117;z-index:1;text-align:left;padding:6px 10px;min-width:150px;max-width:200px}
+  table.mx tbody tr:hover td.rowh{background:#10161e}
   table.mx th.corner{z-index:3}
-  table.mx td.cell{width:20px;height:20px;text-align:center;cursor:pointer}
-  table.mx td.cell.on{background:var(--acc)} table.mx td.cell:hover{outline:1px solid #fff}
+  table.mx td.cell{width:20px;height:20px;text-align:center;cursor:pointer;transition:background .12s ease}
+  table.mx td.cell.on{background:var(--acc)} table.mx td.cell:hover{outline:1px solid var(--acc-hi);outline-offset:-1px}
   .rowh .rname{font-weight:600;color:var(--txt)} .rowh .rsub{color:var(--mut);font-size:10.5px}
   .grp{font-size:10px;color:var(--faint);padding:2px 6px}
 
@@ -195,9 +199,9 @@
   #sideToggle{display:none}
   /* Close handle inside the drawer (base styling; revealed only in drawer mode) */
   #sideClose{display:none;position:absolute;right:10px;top:8px;z-index:2;
-    font-size:11px;border:1px solid var(--cardb);border-radius:7px;padding:4px 9px;
-    background:rgba(255,255,255,.07);color:var(--mut);cursor:pointer}
-  #sideClose:hover{color:var(--txt)}
+    font-size:11px;border:1px solid var(--bd);border-radius:var(--rad);padding:4px 10px;
+    background:rgba(255,255,255,.05);color:var(--mut);cursor:pointer;transition:var(--tr)}
+  #sideClose:hover{color:var(--txt);border-color:var(--bd-strong)}
   /* Backdrop behind the off-canvas side panel on small screens */
   .side-backdrop{position:fixed;inset:0;background:rgba(5,8,16,.5);backdrop-filter:blur(2px);
     z-index:14;opacity:0;pointer-events:none;transition:opacity .2s}
