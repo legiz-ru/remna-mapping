@@ -15,12 +15,13 @@ const test = require('node:test');
 const assert = require('node:assert');
 const dns = require('dns');
 
-const { scan, resolveHost } = require('../server.js');
+const { scan, resolveHost, parseBytes } = require('../server.js');
 
 // ---- DNS stub (server.js captured dns.promises by reference) ----
-const A = { 'de.example.com': ['1.2.3.4'], 'a.example.com': ['1.2.3.4'], 'b.example.com': ['5.6.7.8'] };
+const A = { 'de.example.com': ['1.2.3.4'], 'a.example.com': ['1.2.3.4'], 'b.example.com': ['5.6.7.8'], 'cache.example.com': ['9.9.9.9'] };
 const AAAA = { 'v6.example.com': ['2001:db8::1'] };
-dns.promises.resolve4 = async (name) => { if (A[name]) return A[name]; throw new Error('ENOTFOUND ' + name); };
+const dnsCalls = {};   // count resolve4 invocations per name (for the cache test)
+dns.promises.resolve4 = async (name) => { dnsCalls[name] = (dnsCalls[name] || 0) + 1; if (A[name]) return A[name]; throw new Error('ENOTFOUND ' + name); };
 dns.promises.resolve6 = async (name) => { if (AAAA[name]) return AAAA[name]; throw new Error('ENOTFOUND ' + name); };
 
 // ---- panel API stub ----
@@ -153,4 +154,24 @@ test('resolveHost merges A and AAAA from the system resolver', async () => {
   assert.deepStrictEqual(v6.ips, ['2001:db8::1']);
   const dead = await resolveHost('dead.example.com');
   assert.strictEqual(dead.ips.length, 0);
+});
+
+test('parseBytes handles numbers, numeric strings, and human-readable byte strings', () => {
+  assert.strictEqual(parseBytes(2048), 2048);
+  assert.strictEqual(parseBytes('1000'), 1000);     // numeric string (test fixtures use these)
+  assert.strictEqual(parseBytes('0'), 0);
+  assert.strictEqual(parseBytes('0 B'), 0);
+  assert.strictEqual(parseBytes('1.5 GB'), 1500000000);
+  assert.strictEqual(parseBytes('500 MB'), 500000000);
+  assert.strictEqual(parseBytes('12 KiB'), 12288);  // binary unit
+  assert.strictEqual(parseBytes(null), 0);
+});
+
+test('resolveHost caches results within TTL (no repeat DNS lookup)', async () => {
+  const before = dnsCalls['cache.example.com'] || 0;
+  const r1 = await resolveHost('cache.example.com');
+  const r2 = await resolveHost('cache.example.com');
+  assert.deepStrictEqual(r1.ips, ['9.9.9.9']);
+  assert.deepStrictEqual(r2.ips, ['9.9.9.9']);
+  assert.strictEqual((dnsCalls['cache.example.com'] || 0) - before, 1, 'second lookup must be served from cache');
 });

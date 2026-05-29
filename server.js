@@ -20,6 +20,13 @@ const path = require('path');
 const PORT = parseInt(process.env.PORT || '8088', 10);
 const DOH = process.env.DOH !== '0';            // DoH fallback on by default
 const DNS_TIMEOUT_MS = parseInt(process.env.DNS_TIMEOUT_MS || '4000', 10);
+// Scale knobs (matter when many users scan at once):
+const DNS_CONCURRENCY = parseInt(process.env.DNS_CONCURRENCY || '20', 10);        // max in-flight DNS lookups per scan
+const RESOLVE_TTL_MS = parseInt(process.env.RESOLVE_TTL_MS || '30000', 10);       // DNS result cache TTL (0 disables)
+const RESOLVE_CACHE_MAX = parseInt(process.env.RESOLVE_CACHE_MAX || '20000', 10); // cache entry cap before prune/clear
+const MAX_CONCURRENT_SCANS = parseInt(process.env.MAX_CONCURRENT_SCANS || '20', 10);
+const MAX_SCAN_QUEUE = parseInt(process.env.MAX_SCAN_QUEUE || '200', 10);         // queued scans beyond which we return 503
+const SCAN_TIMEOUT_MS = parseInt(process.env.SCAN_TIMEOUT_MS || '30000', 10);     // overall per-scan cap -> 504
 
 // Accept both IPv4 and IPv6 literals (net.isIP returns 4, 6, or 0).
 const isIp = (s) => typeof s === 'string' && net.isIP(s.trim()) !== 0;
@@ -35,6 +42,25 @@ function stripPort(s) {
   return s.replace(/:\d+$/, '');                // IPv4 or hostname with :port
 }
 
+// Parse a byte count that may arrive as a number, a numeric string, or a
+// human-readable string ("1.23 GB", "12 KiB", "0"). Remnawave's
+// /api/system/nodes/metrics returns inbound up/down PRE-FORMATTED (the panel
+// formats them; "0" means zero), so a plain Number() yields NaN -> 0 and the
+// UI shows empty traffic. Returns bytes (0 on anything unparseable).
+function parseBytes(v) {
+  if (v == null) return 0;
+  if (typeof v === 'number') return Number.isFinite(v) ? v : 0;
+  const s = String(v).trim();
+  if (!s || s === '0') return 0;
+  const m = s.replace(',', '.').match(/^([\d.]+)\s*([KMGTPE]?)(i?)B?$/i);
+  if (!m) { const n = Number(s); return Number.isFinite(n) ? n : 0; }
+  const val = parseFloat(m[1]);
+  if (!Number.isFinite(val)) return 0;
+  const base = m[3] ? 1024 : 1000;   // 'i' (KiB/MiB) -> binary, otherwise decimal
+  const pow = { '': 0, K: 1, M: 2, G: 3, T: 4, P: 5, E: 6 }[m[2].toUpperCase()] || 0;
+  return Math.round(val * Math.pow(base, pow));
+}
+
 // ---------- helpers ----------
 function normalizePanelUrl(u) {
   if (!u) throw new Error('panelUrl is required');
@@ -47,6 +73,37 @@ function withTimeout(promise, ms, onTimeoutValue) {
   let t;
   const timeout = new Promise((res) => { t = setTimeout(() => res(onTimeoutValue), ms); });
   return Promise.race([promise.finally(() => clearTimeout(t)), timeout]);
+}
+
+// ---------- concurrency + DNS cache (matter under many simultaneous users) ----------
+const resolveCache = new Map();   // hostname -> { res, exp }
+function pruneResolveCache() {
+  const now = Date.now();
+  for (const [k, v] of resolveCache) if (v.exp <= now) resolveCache.delete(k);
+  if (resolveCache.size >= RESOLVE_CACHE_MAX) resolveCache.clear();
+}
+// Run `fn` over items with at most `limit` in flight (bounded fan-out).
+async function mapPool(items, limit, fn) {
+  const arr = [...items]; let i = 0;
+  const worker = async () => { while (i < arr.length) { const idx = i++; await fn(arr[idx], idx); } };
+  await Promise.all(Array.from({ length: Math.max(1, Math.min(limit, arr.length || 1)) }, worker));
+}
+// Cap concurrent scans; queue the overflow, refuse when the queue is full.
+let activeScans = 0; const scanWaiters = [];
+function acquireScanSlot() {
+  if (activeScans < MAX_CONCURRENT_SCANS) { activeScans++; return Promise.resolve(true); }
+  if (scanWaiters.length >= MAX_SCAN_QUEUE) return Promise.resolve(false);
+  return new Promise((resolve) => scanWaiters.push(resolve));
+}
+function releaseScanSlot() {
+  const next = scanWaiters.shift();
+  if (next) next(true); else activeScans--;       // hand the slot to the next waiter, or free it
+}
+function scanWithTimeout(panelUrl, token, ms) {
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error('scan timed out after ' + ms + 'ms')), ms);
+    scan(panelUrl, token).then((v) => { clearTimeout(t); resolve(v); }, (e) => { clearTimeout(t); reject(e); });
+  });
 }
 
 async function panelGet(base, token, p) {
@@ -68,6 +125,20 @@ async function panelGet(base, token, p) {
 async function resolveHost(name) {
   name = stripPort(name).trim();
   if (isIp(name)) return { ips: [name], source: 'literal' };
+  if (RESOLVE_TTL_MS > 0) {
+    const c = resolveCache.get(name);
+    if (c && c.exp > Date.now()) return c.res;
+  }
+  const res = await resolveUncached(name);
+  if (RESOLVE_TTL_MS > 0) {
+    if (resolveCache.size >= RESOLVE_CACHE_MAX) pruneResolveCache();
+    resolveCache.set(name, { res, exp: Date.now() + RESOLVE_TTL_MS });
+  }
+  return res;
+}
+
+// system resolver (A+AAAA) then DoH fallback. `name` is already cleaned and known non-literal.
+async function resolveUncached(name) {
   // 1) system resolver — A and AAAA in parallel (either failing is non-fatal)
   try {
     const [v4, v6] = await Promise.all([
@@ -129,12 +200,11 @@ async function scan(panelUrl, token) {
   // ---- live throughput per node (× inbound tag) from Prometheus-backed metrics ----
   const metricsByUuid = new Map();   // nodeUuid -> { up, down, byTag: {tag:{up,down}} }
   {
-    const num = (v) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
     const mnodes = (metricsR && metricsR.ok && metricsR.body && metricsR.body.response && metricsR.body.response.nodes) || [];
     for (const mn of mnodes) {
       const byTag = {}; let up = 0, down = 0;
       for (const s of (mn.inboundsStats || [])) {
-        const u = num(s.upload), d = num(s.download);
+        const u = parseBytes(s.upload), d = parseBytes(s.download);
         up += u; down += d;
         const t = byTag[s.tag] || (byTag[s.tag] = { up: 0, down: 0 });
         t.up += u; t.down += d;
@@ -177,7 +247,7 @@ async function scan(panelUrl, token) {
   const toResolve = new Set();
   for (const h of rawHosts) for (const tok of splitAddress(h.address)) { const c = stripPort(tok); if (!isIp(c)) toResolve.add(c); }
   const resolveMap = {};
-  await Promise.all([...toResolve].map(async d => { resolveMap[d] = await resolveHost(d); }));
+  await mapPool(toResolve, DNS_CONCURRENCY, async (d) => { resolveMap[d] = await resolveHost(d); });
 
   // ---- hosts ----
   const issues = [];
@@ -354,13 +424,19 @@ const server = http.createServer((req, res) => {
     req.on('data', c => { body += c; if (body.length > 1e6) req.destroy(); });
     req.on('end', async () => {
       res.setHeader('content-type', 'application/json; charset=utf-8');
+      let creds;
+      try { creds = JSON.parse(body || '{}'); } catch { res.writeHead(400); return res.end(JSON.stringify({ error: 'invalid JSON body' })); }
+      const { panelUrl, token } = creds || {};
+      if (!panelUrl || !token) { res.writeHead(400); return res.end(JSON.stringify({ error: 'panelUrl and token are required' })); }
+      const slot = await acquireScanSlot();
+      if (!slot) { res.writeHead(503, { 'retry-after': '5' }); return res.end(JSON.stringify({ error: 'server busy — too many concurrent scans, retry shortly' })); }
       try {
-        const { panelUrl, token } = JSON.parse(body || '{}');
-        if (!panelUrl || !token) { res.writeHead(400); return res.end(JSON.stringify({ error: 'panelUrl and token are required' })); }
-        const out = await scan(panelUrl, token);
+        const out = await scanWithTimeout(panelUrl, token, SCAN_TIMEOUT_MS);
         res.writeHead(200); res.end(JSON.stringify(out));
       } catch (e) {
-        res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
+        res.writeHead(/timed out/.test(e.message) ? 504 : 500); res.end(JSON.stringify({ error: e.message }));
+      } finally {
+        releaseScanSlot();
       }
     });
     return;
@@ -372,4 +448,4 @@ const server = http.createServer((req, res) => {
 if (require.main === module) {
   server.listen(PORT, () => console.log(`VPN Topology Mapper running on http://0.0.0.0:${PORT}  (DoH fallback: ${DOH ? 'on' : 'off'})`));
 }
-module.exports = { scan, resolveHost };
+module.exports = { scan, resolveHost, parseBytes };

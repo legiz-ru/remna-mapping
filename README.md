@@ -83,6 +83,12 @@ Each scan also pulls **live throughput** per `(node × inbound)` from `/api/syst
 | `PORT` | `8088` | HTTP listen port |
 | `DOH` | `1` | DNS-over-HTTPS fallback on/off |
 | `DNS_TIMEOUT_MS` | `4000` | per-name DNS timeout before fallback |
+| `DNS_CONCURRENCY` | `20` | max in-flight DNS lookups per scan (bounded fan-out) |
+| `RESOLVE_TTL_MS` | `30000` | DNS result cache TTL in ms (`0` disables) |
+| `RESOLVE_CACHE_MAX` | `20000` | cached hostnames before prune/clear |
+| `MAX_CONCURRENT_SCANS` | `20` | concurrent scans before requests queue |
+| `MAX_SCAN_QUEUE` | `200` | queued scans beyond which `/api/scan` returns `503` |
+| `SCAN_TIMEOUT_MS` | `30000` | overall per-scan cap before `504` |
 
 ## API
 
